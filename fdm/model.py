@@ -1,5 +1,5 @@
 import collections
-from .finite_difference import Stencil
+from .equation import Stencil
 
 
 __all__ = ['Model', 'BoundaryCondition']

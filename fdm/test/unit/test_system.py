@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 from mock import MagicMock
 
-from fdm.finite_difference import Scheme, LinearEquationTemplate
+from fdm.equation import Scheme, LinearEquationTemplate
 from fdm.system import (LinearEquation, model_to_equations, VirtualNode, EquationWriter, VirtualNodeWriter,
                               extract_virtual_nodes, Output, VirtualValueStrategy)
 

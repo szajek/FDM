@@ -2,8 +2,8 @@ import math
 import unittest
 from mock import MagicMock, patch
 
-from fdm.finite_difference import (LazyOperation, Operator, Stencil, Scheme, Number, Element, \
-    Delta, NodeFunction, operate, merge_weights, Coefficients, MutateMixin)
+from fdm.equation import (LazyOperation, Operator, Stencil, Scheme, Number, Element, \
+                          Delta, NodeFunction, operate, merge_weights, Coefficients, MutateMixin)
 
 
 def _are_the_same_objects(obj, mutated):

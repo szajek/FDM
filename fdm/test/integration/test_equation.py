@@ -1,6 +1,6 @@
 import unittest
 
-from fdm.finite_difference import Operator, Stencil, Number, Scheme, LazyOperation, NodeFunction
+from fdm.equation import Operator, Stencil, Number, Scheme, LazyOperation, NodeFunction
 
 
 class OperatorTest(unittest.TestCase):

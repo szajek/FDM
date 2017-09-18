@@ -1,4 +1,4 @@
 from .domain import *
-from .finite_difference import *
+from .equation import *
 from .model import *
 from .system import *
