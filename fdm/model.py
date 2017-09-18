@@ -26,9 +26,17 @@ def _create_neumann_bc(stencil, value=0.):
     )
 
 
+def _create_bc_by_equation(operator, free_value=0.):
+    return LinearEquationTemplate(
+        operator=operator,
+        free_value=lambda node_address: free_value,
+    )
+
+
 _bc_generators = {
     'dirichlet': _create_dirichlet_bc,
     'neumann': _create_neumann_bc,
+    'equation': _create_bc_by_equation,
 }
 
 
