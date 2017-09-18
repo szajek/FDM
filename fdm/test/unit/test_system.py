@@ -58,7 +58,7 @@ class ModelToEquationsTest(unittest.TestCase):
                     return_value=[MagicMock(length=node_span) for node_address in range(node_number - 1)]
                 )
             ),
-            bcs=[],
+            bcs={},
             equation=equation,
         )
 

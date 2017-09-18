@@ -50,18 +50,13 @@ def extract_virtual_nodes(equation, domain, strategy):
 def model_to_equations(model):
 
     def create_equation(node_address):
-        if node_address in model.bcs:
-            bc = model.bcs[node_address]
-            free_value = model.equation.free_value(node_address) if '--bc-no-for-free' in sys.argv else bc.free_value(node_address)
-            return LinearEquation(
-                bc.coefficients.expand(node_address).to_coefficients(1.),  # todo: make delta not necessary
-                free_value)
-        else:
-            delta = Delta.from_connections(*model.domain.get_connections(node_address))
-            return LinearEquation(
-                    model.equation.operator(node_address).to_coefficients(delta),
-                    model.equation.free_value(node_address)
-            )
+        equation = model.bcs.get(node_address, model.equation)
+        return LinearEquation(
+            equation.operator(node_address).to_coefficients(
+                Delta.from_connections(*model.domain.get_connections(node_address))
+            ),
+            equation.free_value(node_address)
+        )
 
     return [create_equation(i) for i, node in enumerate(model.domain.nodes)]
 

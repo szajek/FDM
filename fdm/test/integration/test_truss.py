@@ -1,8 +1,9 @@
 import unittest
+import numpy as np
 
 from fdm.domain import Grid1DBuilder
 from fdm.equation import Operator, Stencil, Number, LinearEquationTemplate, NodeFunction
-from fdm.model import BoundaryCondition, Model
+from fdm.model import create_bc, Model
 from fdm.system import solve
 
 
@@ -34,15 +35,15 @@ def _create_equation(linear_operator, free_vector):
 
 def _create_fixed_and_free_end_bc(node_number):
     return {
-        0: BoundaryCondition.dirichlet(),
-        node_number - 1: BoundaryCondition.neumann(Stencil.backward())
+        0: create_bc('dirichlet'),
+        node_number - 1: create_bc('neumann', Stencil.backward(), value=0.)
     }
 
 
 def _create_fixed_ends_bc(node_number):
     return {
-        0: BoundaryCondition.dirichlet(),
-        node_number - 1: BoundaryCondition.dirichlet()
+        0: create_bc('dirichlet', value=0.),
+        node_number - 1: create_bc('dirichlet', value=0.)
     }
 
 
@@ -115,7 +116,7 @@ class TrussStaticEquationFiniteDifferencesTest(unittest.TestCase):
             'linear_system_of_equations',
             domain, 'fixed_free',
             load_function_coefficients=(0., -1.),
-            cross_section = NodeFunction.with_linear_interpolator(cross_section),
+            cross_section=NodeFunction.with_linear_interpolator(cross_section),
         )
 
         expected = np.array(
