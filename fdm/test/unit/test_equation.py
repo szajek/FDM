@@ -2,7 +2,7 @@ import math
 import unittest
 from mock import MagicMock, patch
 
-from fdm.equation import (LazyOperation, Operator, Stencil, Scheme, Number, Element, \
+from fdm.equation import (LazyOperation, Operator, Stencil, LocalizedStencil, Scheme, Number, Element, \
                           Delta, NodeFunction, operate, merge_weights, Coefficients, MutateMixin)
 
 
@@ -274,6 +274,24 @@ class SchemeTest(unittest.TestCase):
             {i: d for i, d in enumerate(weights)},
             order
         )
+
+
+class SchemeModifierTest(unittest.TestCase):
+    def _test_Expand_Always_ModifyWeightAndOrderUsingProvidedFunction(self):
+        stencil = Stencil({-8: 1.}, order=2.)
+        new_weights = {4.: 9.}
+        new_order = 4.
+
+        def modifier(node_address, stencil):
+            return new_weights, new_order
+
+        modified_stencil = LocalizedStencil(stencil, modifier)
+
+        result = modified_stencil.expand(0.)
+
+        expected = Scheme(new_weights, new_order)
+
+        self.assertEqual(expected, result)
 
 
 class MergeWeightsTest(unittest.TestCase):

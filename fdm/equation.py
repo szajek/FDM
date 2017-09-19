@@ -6,7 +6,7 @@ import math
 import dicttools
 import enum
 
-__all__ = ['Scheme', 'Element', 'Stencil', 'LazyOperation', 'Operator', 'Number', 'NodeFunction',
+__all__ = ['Scheme', 'Element', 'Stencil', 'LocalizedStencil', 'LazyOperation', 'Operator', 'Number', 'NodeFunction',
            'LinearEquationTemplate', 'Delta']
 
 
@@ -377,6 +377,19 @@ class Stencil(Element, MutateMixin):
     def __repr__(self):
         return "{name}: {data} of order {order}".format(
             name=self.__class__.__name__, data=self._weights, order=self._order)
+
+
+class LocalizedStencil(Element):
+    def __init__(self, stencil, modifier):
+        self._stencil = stencil
+        self._modifier = modifier
+
+    def expand(self, node_address):
+        weights, order = self._modifier(node_address, self._stencil)
+        return self._stencil.mutate(weights=weights, order=order).expand(node_address)
+
+    def __getattr__(self, item):
+        return getattr(self._stencil, item)
 
 
 class Operator(Element):
