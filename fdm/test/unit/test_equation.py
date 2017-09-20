@@ -2,7 +2,7 @@ import math
 import unittest
 from mock import MagicMock, patch
 
-from fdm.equation import (LazyOperation, Operator, Stencil, LocalizedStencil, Scheme, Number, Element, \
+from fdm.equation import (LazyOperation, Operator, Stencil, LocalizedStencil, DynamicStencil, Scheme, Number, Element, \
                           Delta, NodeFunction, operate, merge_weights, Coefficients, MutateMixin)
 
 
@@ -276,24 +276,6 @@ class SchemeTest(unittest.TestCase):
         )
 
 
-class SchemeModifierTest(unittest.TestCase):
-    def _test_Expand_Always_ModifyWeightAndOrderUsingProvidedFunction(self):
-        stencil = Stencil({-8: 1.}, order=2.)
-        new_weights = {4.: 9.}
-        new_order = 4.
-
-        def modifier(node_address, stencil):
-            return new_weights, new_order
-
-        modified_stencil = LocalizedStencil(stencil, modifier)
-
-        result = modified_stencil.expand(0.)
-
-        expected = Scheme(new_weights, new_order)
-
-        self.assertEqual(expected, result)
-
-
 class MergeWeightsTest(unittest.TestCase):
     def test_Call_NoIntersection_ReturnDictWithElementsFromBoth(self):
 
@@ -510,8 +492,71 @@ class StencilTest(unittest.TestCase):
 
         self.assertTrue(self._compare_dict(expected, result,))
 
+    def test_Eq_Always_CheckWeightsAxesOrder(self):
+        self.assertEqual(
+            Stencil({-3.: -6.5, 3.: 2.5}, axis=2, order=3),
+            Stencil({-3.: -6.5, 3.: 2.5}, axis=2, order=3)
+        )
+        self.assertNotEqual(
+            Stencil({-1.: -6.5, 3.: 2.5}, axis=2, order=3),
+            Stencil({-3.: -6.5, 3.: 2.5}, axis=2, order=3)
+        )
+        self.assertNotEqual(
+            Stencil({-3.: -6.5, 3.: 2.5}, axis=1, order=3),
+            Stencil({-3.: -6.5, 3.: 2.5}, axis=2, order=3)
+        )
+        self.assertNotEqual(
+            Stencil({-3.: -6.5, 3.: 2.5}, axis=2, order=1),
+            Stencil({-3.: -6.5, 3.: 2.5}, axis=2, order=3)
+        )
+
+    def test_Scale_Always_ScaleWeightsAddresses(self):
+
+        stencil = Stencil({-3.: -6.5, 3.: 2.5})
+
+        result = stencil.scale(2.)
+
+        expected = Stencil({-6.: -6.5, 6.: 2.5})
+
+        self.assertEqual(expected, result)
+
     def _compare_dict(self, d1, d2, tol=1e-4):
         return len(d1) == len(d2) and all(math.fabs(d1[k] - d2[k]) < tol for k in d1.keys())
+
+
+class LocalizedStencilTest(unittest.TestCase):
+    def _test_Expand_Always_ModifyWeightAndOrderUsingProvidedFunction(self):
+        stencil = Stencil({-8: 1.}, order=2.)
+        new_weights = {4.: 9.}
+        new_order = 4.
+
+        def modifier(node_address, scheme):
+            return Scheme(new_weights, order=new_order)
+
+        modified_stencil = LocalizedStencil(stencil, modifier)
+
+        result = modified_stencil.expand(0.)
+
+        expected = Scheme(new_weights, new_order)
+
+        self.assertEqual(expected, result)
+
+
+class DynamicStencilTest(unittest.TestCase):
+    def _test_Expand_Always_BuildStencilForGivenAddress(self):
+        expected_weights = {4.: 9.}
+        expected_order = 4.
+
+        def builder(node_address):
+            return Stencil(expected_weights, order=expected_order)
+
+        dynamic_stencil = DynamicStencil(builder)
+
+        result = dynamic_stencil.expand(0.)
+
+        expected = Scheme(expected_weights, expected_order)
+
+        self.assertEqual(expected, result)
 
 
 class LazyOperationTest(unittest.TestCase):

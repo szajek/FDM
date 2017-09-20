@@ -6,8 +6,8 @@ import math
 import dicttools
 import enum
 
-__all__ = ['Scheme', 'Element', 'Stencil', 'LocalizedStencil', 'LazyOperation', 'Operator', 'Number', 'NodeFunction',
-           'LinearEquationTemplate', 'Delta']
+__all__ = ['Scheme', 'Element', 'Stencil', 'LocalizedStencil', 'DynamicStencil', 'LazyOperation', 'Operator', 'Number',
+           'NodeFunction', 'LinearEquationTemplate', 'Delta']
 
 
 class MutateMixin:
@@ -153,20 +153,22 @@ class Scheme(MutateMixin):
     def to_coefficients(self, delta):
         delta = pow(delta, self._order)
 
-        def distribute_to_closest_nodes(address, value):
-            modulo = math.fmod(address, 1.)
-            abs_modulo = math.fabs(modulo)
-
-            _w1, _w2 = (1. - abs_modulo), abs_modulo
-            w1, w2 = (_w1, _w2) if modulo > 0. else (_w2, _w1)
-
-            return {math.floor(address): w1*value, math.ceil(address): w2*value} if math.fabs(modulo) > NODE_TOLERANCE else\
-                    {int(address): value}
-
         return Coefficients(merge_weights(*[
-            distribute_to_closest_nodes(node_address, coeff/delta)
+            self._distribute_to_closest_nodes(node_address, coeff/delta)
             for node_address, coeff in self._weights.items()
             ]))
+
+    @staticmethod
+    def _distribute_to_closest_nodes(address, value):
+        modulo = math.fmod(address, 1.)
+        abs_modulo = math.fabs(modulo)
+
+        _w1, _w2 = (1. - abs_modulo), abs_modulo
+        w1, w2 = (_w1, _w2) if modulo > 0. else (_w2, _w1)
+
+        return {math.floor(address): w1 * value, math.ceil(address): w2 * value} if math.fabs(
+            modulo) > NODE_TOLERANCE else \
+            {int(address): value}
 
     def __mul__(self, other):
 
@@ -374,9 +376,18 @@ class Stencil(Element, MutateMixin):
     def expand(self, node_address):
         return Scheme(self._weights, order=self._order) + node_address
 
+    def scale(self, multiplier):
+        return self.mutate(weights={address * multiplier: value for address, value in self._weights.items()})
+
     def __repr__(self):
         return "{name}: {data} of order {order}".format(
             name=self.__class__.__name__, data=self._weights, order=self._order)
+
+    def __eq__(self, other):
+        if isinstance(other, Stencil):
+            return self._weights == other._weights and self._axis == other._axis and self._order == other._order
+        else:
+            return False
 
 
 class LocalizedStencil(Element):
@@ -385,11 +396,18 @@ class LocalizedStencil(Element):
         self._modifier = modifier
 
     def expand(self, node_address):
-        weights, order = self._modifier(node_address, self._stencil)
-        return self._stencil.mutate(weights=weights, order=order).expand(node_address)
+        return self._modifier(node_address, self._stencil).expand(node_address)
 
     def __getattr__(self, item):
         return getattr(self._stencil, item)
+
+
+class DynamicStencil(Element):
+    def __init__(self, builder):
+        self._builder = builder
+
+    def expand(self, node_address):
+        return self._builder(node_address).expand(node_address)
 
 
 class Operator(Element):

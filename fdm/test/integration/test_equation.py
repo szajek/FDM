@@ -90,5 +90,3 @@ class LazyOperationTest(unittest.TestCase):
         expected = Scheme({-0.5: w1*2, 0.0: w2*2})
 
         self.assertEqual(expected, result)
-
-
