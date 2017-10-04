@@ -471,3 +471,15 @@ class NodeFunction:
 #
 
 LinearEquationTemplate = collections.namedtuple('LinearEquationTemplate', ('operator', 'free_value'))
+
+
+class CombinedEquation:
+    def __init__(self, default):
+        self._default = default
+        self._register = {}
+
+    def get(self, address):
+        return self._register.get(address, self._default)
+
+    def register(self, address, template):
+        self._register[address] = template

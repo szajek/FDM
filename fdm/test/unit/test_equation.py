@@ -3,7 +3,7 @@ import unittest
 from mock import MagicMock, patch
 
 from fdm.equation import (LazyOperation, Operator, Stencil, LocalizedStencil, DynamicStencil, Scheme, Number, Element, \
-                          Delta, NodeFunction, operate, merge_weights, Coefficients, MutateMixin)
+                          Delta, NodeFunction, operate, merge_weights, Coefficients, MutateMixin, CombinedEquation)
 
 
 def _are_the_same_objects(obj, mutated):
@@ -731,3 +731,33 @@ class NodeFunctionTest(unittest.TestCase):
         expected = interpolator(0.2, 1., 2., 1., 2.)
 
         self.assertAlmostEqual(expected, result)
+
+
+class CombinedEquationTest(unittest.TestCase):
+    def test_Get_NodeAddressNotRegistered_ReturnDefaultEquation(self):
+
+        _node_address = 2.
+        default_template = MagicMock()
+
+        equation = CombinedEquation(default_template)
+
+        result = equation.get(_node_address)
+
+        expected = default_template
+
+        self.assertEqual(expected, result)
+
+    def test_Get_NodeAddressIsRegistered_ReturnRegisteredEquation(self):
+
+        _node_address = 2.
+        default_template = MagicMock()
+        node_template = MagicMock()
+
+        equation = CombinedEquation(default_template)
+        equation.register(2, node_template)
+
+        result = equation.get(_node_address)
+
+        expected = node_template
+
+        self.assertEqual(expected, result)
