@@ -3,7 +3,7 @@ import unittest
 from mock import MagicMock, patch
 
 from fdm.equation import (LazyOperation, Operator, Stencil, LocalizedStencil, DynamicStencil, Scheme, Number, Element, \
-                          Delta, NodeFunction, operate, merge_weights, Coefficients, MutateMixin, CombinedEquation)
+                          Delta, NodeFunction, operate, merge_weights, Coefficients, MutateMixin, DynamicLinearEquationTemplate)
 
 
 def _are_the_same_objects(obj, mutated):
@@ -733,13 +733,13 @@ class NodeFunctionTest(unittest.TestCase):
         self.assertAlmostEqual(expected, result)
 
 
-class CombinedEquationTest(unittest.TestCase):
+class DynamicLinearEquationTemplateTest(unittest.TestCase):
     def test_Get_NodeAddressNotRegistered_ReturnDefaultEquation(self):
 
         _node_address = 2.
         default_template = MagicMock()
 
-        equation = CombinedEquation(default_template)
+        equation = DynamicLinearEquationTemplate(default_template)
 
         result = equation.get(_node_address)
 
@@ -753,11 +753,45 @@ class CombinedEquationTest(unittest.TestCase):
         default_template = MagicMock()
         node_template = MagicMock()
 
-        equation = CombinedEquation(default_template)
-        equation.register(2, node_template)
+        equation = DynamicLinearEquationTemplate(default_template)
+        equation.set(2, node_template)
 
         result = equation.get(_node_address)
 
         expected = node_template
+
+        self.assertEqual(expected, result)
+
+    def test_Operator_NodeAddressIsNotRegistered_ReturnDefaultEquationOperator(self):
+
+        _node_address = 2.
+        default_template = MagicMock(
+            operator=MagicMock(return_value='default_template')
+        )
+
+        equation = DynamicLinearEquationTemplate(default_template)
+
+        result = equation.operator(_node_address)
+
+        expected = 'default_template'
+
+        self.assertEqual(expected, result)
+
+    def test_Operator_NodeAddressIsRegistered_ReturnRegisteredEquationOperator(self):
+
+        _node_address = 2.
+        default_template = MagicMock(
+            operator=MagicMock(return_value='default_template')
+        )
+        node_template = MagicMock(
+            operator=MagicMock(return_value='node_template')
+        )
+
+        equation = DynamicLinearEquationTemplate(default_template)
+        equation.set(2, node_template)
+
+        result = equation.operator(_node_address)
+
+        expected = 'node_template'
 
         self.assertEqual(expected, result)

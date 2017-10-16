@@ -29,7 +29,7 @@ class Grid:
 
     def get_connections(self, node_address):
         backward = None if node_address <= 0 else self.connections[node_address - 1]
-        forward = None if node_address >= len(self.nodes) - 1 else self.connections[node_address]
+        forward = None if node_address >= (len(self.nodes) - 1) else self.connections[node_address]
         return list(filter(partial(is_not, None), [backward, forward]))
 
     def get_by_address(self, address):

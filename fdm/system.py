@@ -6,7 +6,7 @@ import itertools
 import numpy as np
 import sys
 
-from .equation import Delta
+from .equation import Delta, DynamicLinearEquationTemplate
 
 __all__ = ['LinearEquation', 'solve', 'VirtualValueStrategy']
 
@@ -47,37 +47,51 @@ def extract_virtual_nodes(equation, domain, strategy):
     return list(filter(None, [create_virtual_node_if_needed(node_id) for node_id in equation.coefficients.keys()]))
 
 
+def template_to_equation(template, model, node_address, delta=None):
+    delta = Delta.from_connections(*model.domain.get_connections(node_address)) if delta is None else delta
+    return LinearEquation(
+        template.operator(node_address).to_coefficients(
+            delta
+        ),
+        template.free_value(node_address)
+    )
+
+
 def model_to_equations(model):
 
     def create_equation(node_address):
-        equation = model.bcs.get(node_address, model.equation)
-        return LinearEquation(
-            equation.operator(node_address).to_coefficients(
-                Delta.from_connections(*model.domain.get_connections(node_address))
-            ),
-            equation.free_value(node_address)
-        )
+        return template_to_equation(model.bcs.get(node_address, model.equation), model, node_address)
 
     return [create_equation(i) for i, node in enumerate(model.domain.nodes)]
+
+
+def virtual_nodes_to_equations(virtual_nodes, renumerator, model):  # todo: remove bcs
+    def to_equality_equation(vn):
+        variable_number = renumerator.get(vn.address)
+        return LinearEquation(
+            {
+                variable_number: 1.,
+                vn.corresponding_address: -1.
+            },
+            0.
+        )
+
+    def form_template(template, address):
+        return template_to_equation(template, model, address, delta=1.)
+
+    def to_equation(vn):
+        if vn.address in model.bcs:
+            return form_template(model.bcs[vn.address], vn.address)
+        else:
+            return to_equality_equation(vn)
+
+    return list(map(to_equation, virtual_nodes))
 
 
 VirtualNode = collections.namedtuple('VirtualNode', ('address', 'corresponding_address', ))
 
 
-class Writer(metaclass=abc.ABCMeta):
-    @abc.abstractmethod
-    def to_coefficients_array(self, size):
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def to_free_value(self):
-        raise NotImplementedError
-
-    def _create_row(self, size):
-        return np.zeros(size)
-
-
-class EquationWriter(Writer):
+class EquationWriter:
     def __init__(self, equation, renumerator):
         self._equation = equation
         self._renumerator = renumerator
@@ -92,22 +106,8 @@ class EquationWriter(Writer):
     def to_free_value(self):
         return self._equation.free_value
 
-
-class VirtualNodeWriter(Writer):
-    def __init__(self, virtual_node, virtual_node_number, real_variable_number):
-        self._virtual_node = virtual_node
-        self._virtual_node_number = virtual_node_number
-        self._real_variable_number = real_variable_number
-
-    def to_coefficients_array(self, size):
-        row = self._create_row(size)
-        variable_number = self._real_variable_number + self._virtual_node_number
-        row[variable_number] = 1.
-        row[int(self._virtual_node.corresponding_address)] = -1.
-        return row
-
-    def to_free_value(self):
-        return 0.
+    def _create_row(self, size):
+        return np.zeros(size)
 
 
 class Output(collections.Mapping):
@@ -140,43 +140,45 @@ class Output(collections.Mapping):
 
 
 def _solve(solver, model, strategy=VirtualValueStrategy.SYMMETRY):
-    equations = model_to_equations(model)
 
-    real_variables_number = len(equations)
+    def create_virtual_nodes():
+        return set(sum([extract_virtual_nodes(equation, model.domain, strategy) for equation in real_equations], []))
 
-    def create_address_forwarder(virtual_nodes):
+    def create_address_forwarder():
         return collections.OrderedDict(
             [(vn.address, real_variables_number + i) for i, vn in enumerate(virtual_nodes)])
 
-    def create_writers(_virtual_nodes):
+    def fill_arrays(weights, free_vector):
 
-        equations_writers = map(lambda eq: EquationWriter(eq, address_forwarder), equations)
-        virtual_node_writers = map(lambda i, vn: VirtualNodeWriter(vn, i, real_variables_number),
-                                   *zip(*enumerate(_virtual_nodes))) if _virtual_nodes else []
-        return itertools.chain(equations_writers, virtual_node_writers)
+        for i, writer in enumerate(create_equation_writers()):
+            weights[i] = writer.to_coefficients_array(all_variable_number)
+            free_vector[i] = writer.to_free_value()
+        return weights, free_vector
 
-    def create_virtual_nodes():
-        return sum([extract_virtual_nodes(equation, model.domain, strategy) for equation in equations], [])
+    def create_empty_arrays():
+        return np.zeros((all_variable_number, all_variable_number)), np.zeros(all_variable_number)
 
-    def prepare_empty_arrays(variables_number):
-        return np.zeros((variables_number, variables_number)), np.zeros(variables_number)
+    def create_equation_writers():
+        return map(lambda eq: EquationWriter(eq, address_forwarder), all_equations)
 
-    def create_arrays():
-        variable_number = real_variables_number + len(virtual_nodes)
-
-        weights_array, free_vector_array = prepare_empty_arrays(variable_number)
-        for i, writer in enumerate(create_writers(virtual_nodes)):
-            weights_array[i] = writer.to_coefficients_array(variable_number)
-            free_vector_array[i] = writer.to_free_value()
-        return weights_array, free_vector_array
+    real_equations = model_to_equations(model)
+    real_variables_number = len(real_equations)
 
     virtual_nodes = create_virtual_nodes()
-    address_forwarder = create_address_forwarder(virtual_nodes)
-    return Output(solver(*create_arrays()), real_variables_number, address_forwarder)
+    address_forwarder = create_address_forwarder()
+    virtual_nodes_equations = virtual_nodes_to_equations(virtual_nodes, address_forwarder, model)
+
+    all_equations = real_equations + virtual_nodes_equations
+    all_variable_number = len(all_equations)
+
+    weights_array, free_vector_array = fill_arrays(*create_empty_arrays())
+
+    return Output(solver(weights_array, free_vector_array), real_variables_number, address_forwarder)
 
 
 def create_linear_system_of_equations_solver():
     def _solve(A, b):
+        np.set_printoptions(suppress=True, linewidth=500, threshold=np.nan)
         return np.linalg.solve(A, b[np.newaxis].T)
     return _solve
 

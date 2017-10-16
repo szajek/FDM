@@ -4,8 +4,8 @@ import numpy as np
 from mock import MagicMock
 
 from fdm.equation import Scheme, LinearEquationTemplate
-from fdm.system import (LinearEquation, model_to_equations, VirtualNode, EquationWriter, VirtualNodeWriter,
-                              extract_virtual_nodes, Output, VirtualValueStrategy)
+from fdm.system import (LinearEquation, model_to_equations, VirtualNode, EquationWriter,
+                        extract_virtual_nodes, Output, VirtualValueStrategy, virtual_nodes_to_equations)
 
 
 def create_domain(node_number, delta=2.):
@@ -106,16 +106,55 @@ class EquationWriterTest(unittest.TestCase):
         np.testing.assert_allclose(expected, result)
 
 
-class VirtualNodeWriterTest(unittest.TestCase):
-    def test_ToCoefficientsArray_Always_ReturnArrayWithWeights_SymmetryConsidered(self):
-        eq = VirtualNode(-1, 1)
-        writer = VirtualNodeWriter(eq, 0, 2)
+class VirtualNodeToEquationTest(unittest.TestCase):
+    def test_Call_VirtualNodeNotInBcs_Alwyas_ReturnEquation(self):
+        virtual_node = VirtualNode(-1, 1)
+        renumerator = {-1: 2}
+        model = MagicMock()
 
-        result = writer.to_coefficients_array(3)
+        result = self._convert([virtual_node], renumerator, model)
 
-        expected = np.array([0., -1., 1.],)
+        expected = [LinearEquation(
+            coefficients={1: -1., 2: 1.},
+            free_value=0.
+        )]
 
-        np.testing.assert_allclose(expected, result)
+        self.assertEqual(expected, result)
+
+    def test_Call_VirtualNodeInBcs_Alwyas_ReturnEquation(self):
+        virtual_node = VirtualNode(-1, 1)
+        model = MagicMock(
+            bcs={
+                -1: MagicMock(
+                    operator=MagicMock(
+                        return_value=MagicMock(
+                            to_coefficients=lambda a: {999: 222}
+                        )
+                    ),
+                    free_value=MagicMock(
+                        return_value=-999.
+                    )
+                )
+            },
+            domain=MagicMock(
+                nodes=[1, 2, 3],
+                get_connections=lambda a: [
+                    MagicMock(length=1),
+                    MagicMock(length=1),
+                ],
+            )
+        )
+
+        result = self._convert([virtual_node], {}, model)
+
+        expected = [LinearEquation(
+            coefficients={999: 222},
+            free_value=-999.
+        )]
+        self.assertEqual(expected, result)
+
+    def _convert(self, *args):
+        return virtual_nodes_to_equations(*args)
 
 
 class OutputTest(unittest.TestCase):

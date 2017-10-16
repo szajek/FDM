@@ -7,7 +7,7 @@ import dicttools
 import enum
 
 __all__ = ['Scheme', 'Element', 'Stencil', 'LocalizedStencil', 'DynamicStencil', 'LazyOperation', 'Operator', 'Number',
-           'NodeFunction', 'LinearEquationTemplate', 'Delta']
+           'NodeFunction', 'LinearEquationTemplate', 'Delta', 'DynamicLinearEquationTemplate']
 
 
 class MutateMixin:
@@ -473,7 +473,7 @@ class NodeFunction:
 LinearEquationTemplate = collections.namedtuple('LinearEquationTemplate', ('operator', 'free_value'))
 
 
-class CombinedEquation:
+class DynamicLinearEquationTemplate:
     def __init__(self, default):
         self._default = default
         self._register = {}
@@ -481,5 +481,19 @@ class CombinedEquation:
     def get(self, address):
         return self._register.get(address, self._default)
 
-    def register(self, address, template):
+    def set(self, address, template):
         self._register[address] = template
+
+    def __getitem__(self, address):
+        return self.get(address)
+
+    def __setitem__(self, address, equation):
+        return self.set(address, equation)
+
+    @property
+    def operator(self):
+        return lambda address: self.get(address).operator(address)
+
+    @property
+    def free_value(self):
+        return lambda address: self.get(address).free_value(address)
