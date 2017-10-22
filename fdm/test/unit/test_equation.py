@@ -3,7 +3,8 @@ import unittest
 from mock import MagicMock, patch
 
 from fdm.equation import (LazyOperation, Operator, Stencil, LocalizedStencil, DynamicStencil, Scheme, Number, Element, \
-                          Delta, NodeFunction, operate, merge_weights, Coefficients, MutateMixin, DynamicLinearEquationTemplate)
+                          Delta, NodeFunction, operate, merge_weights, Coefficients, MutateMixin, DynamicLinearEquationTemplate,
+                          DispatchedOperator)
 
 
 def _are_the_same_objects(obj, mutated):
@@ -268,6 +269,15 @@ class SchemeTest(unittest.TestCase):
         expected = {0: 0.25, 1: 0.75}
 
         self.assertEquals(expected, result)
+
+    def test_Iter_Always_IterateThroughSortedKeys(self):
+        s = Scheme({-3: 1, -5: 2, 10: 1, 1: 1})
+
+        result = [k for k, v in s]
+
+        expected = [-5, -3, 1, 10]
+
+        self.assertEqual(expected, result)
 
     def _build_scheme(self, weights, order=1.):
         return Scheme(
@@ -555,6 +565,37 @@ class DynamicStencilTest(unittest.TestCase):
         result = dynamic_stencil.expand(0.)
 
         expected = Scheme(expected_weights, expected_order)
+
+        self.assertEqual(expected, result)
+
+
+class DispatchedOperatorTest(unittest.TestCase):
+    def test_Expand_Always_UseDynamicElementByLocal(self):
+        operator = Operator(
+            Stencil({-2: 1, -1: 1, 1: 1, 2: 1})
+        )
+        element_start = MagicMock(
+            expand=MagicMock(return_value=Scheme({-10: 1.}))
+        )
+        element_center = MagicMock(
+            expand=MagicMock(return_value=Scheme({0: 2.}))
+        )
+        element_end = MagicMock(
+            expand=MagicMock(return_value=Scheme({10: 3.}))
+        )
+
+        def dispatcher(position):
+            return {
+                DispatchedOperator.Position.START: element_start,
+                DispatchedOperator.Position.CENTER: element_center,
+                DispatchedOperator.Position.END: element_end,
+            }[position]
+
+        dispatcher = DispatchedOperator(operator, dispatcher)
+
+        result = dispatcher.expand(0)
+
+        expected = Scheme({-10: 1., 0: 2.*2., 10: 3.}, order=2)
 
         self.assertEqual(expected, result)
 
