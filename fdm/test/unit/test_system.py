@@ -109,13 +109,12 @@ class EquationWriterTest(unittest.TestCase):
 class VirtualNodeToEquationTest(unittest.TestCase):
     def test_Call_VirtualNodeNotInBcs_Alwyas_ReturnEquation(self):
         virtual_node = VirtualNode(-1, 1)
-        renumerator = {-1: 2}
         model = MagicMock()
 
-        result = self._convert([virtual_node], renumerator, model)
+        result = self._convert([virtual_node], model)
 
         expected = [LinearEquation(
-            coefficients={1: -1., 2: 1.},
+            coefficients={1: -1., -1: 1.},
             free_value=0.
         )]
 
@@ -145,7 +144,7 @@ class VirtualNodeToEquationTest(unittest.TestCase):
             )
         )
 
-        result = self._convert([virtual_node], {}, model)
+        result = self._convert([virtual_node], model)
 
         expected = [LinearEquation(
             coefficients={999: 222},

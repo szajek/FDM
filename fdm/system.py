@@ -4,6 +4,7 @@ import enum
 import itertools
 
 import numpy as np
+np.set_printoptions(suppress=True, linewidth=500, threshold=np.nan)
 import sys
 
 from .equation import Delta, DynamicLinearEquationTemplate
@@ -13,9 +14,13 @@ __all__ = ['LinearEquation', 'solve', 'VirtualValueStrategy']
 LinearEquation = collections.namedtuple('LinearEquation', ('coefficients', 'free_value'))
 
 
+VirtualNode = collections.namedtuple('VirtualNode', ('address', 'corresponding_address', ))
+
+
 class VirtualValueStrategy(enum.Enum):
-    SYMMETRY = 0
-    AS_IN_BORDER = 1
+    NONE = 0
+    SYMMETRY = 1
+    AS_IN_BORDER = 2
 
 
 def extract_virtual_nodes(equation, domain, strategy):
@@ -32,7 +37,9 @@ def extract_virtual_nodes(equation, domain, strategy):
         return 0 if location == -1 else last_node_idx
 
     def find_corresponding_node(node_id, location):
-        if strategy == VirtualValueStrategy.SYMMETRY:
+        if strategy == VirtualValueStrategy.NONE:
+            return node_id
+        elif strategy == VirtualValueStrategy.SYMMETRY:
             return find_symmetric_node(node_id, location)
         elif strategy == VirtualValueStrategy.AS_IN_BORDER:
             return find_boundary_node(location)
@@ -50,9 +57,7 @@ def extract_virtual_nodes(equation, domain, strategy):
 def template_to_equation(template, model, node_address, delta=None):
     delta = Delta.from_connections(*model.domain.get_connections(node_address)) if delta is None else delta
     return LinearEquation(
-        template.operator(node_address).to_coefficients(
-            delta
-        ),
+        template.operator(node_address).to_coefficients(delta),
         template.free_value(node_address)
     )
 
@@ -65,30 +70,26 @@ def model_to_equations(model):
     return [create_equation(i) for i, node in enumerate(model.domain.nodes)]
 
 
-def virtual_nodes_to_equations(virtual_nodes, renumerator, model):  # todo: remove bcs
+def virtual_nodes_to_equations(virtual_nodes, model):  # todo: remove bcs
     def to_equality_equation(vn):
-        variable_number = renumerator.get(vn.address)
         return LinearEquation(
             {
-                variable_number: 1.,
+                vn.address: 1.,
                 vn.corresponding_address: -1.
             },
             0.
         )
 
-    def form_template(template, address):
+    def from_template(template, address):
         return template_to_equation(template, model, address, delta=1.)
 
     def to_equation(vn):
         if vn.address in model.bcs:
-            return form_template(model.bcs[vn.address], vn.address)
+            return from_template(model.bcs[vn.address], vn.address)
         else:
             return to_equality_equation(vn)
 
     return list(map(to_equation, virtual_nodes))
-
-
-VirtualNode = collections.namedtuple('VirtualNode', ('address', 'corresponding_address', ))
 
 
 class EquationWriter:
@@ -99,8 +100,8 @@ class EquationWriter:
     def to_coefficients_array(self, size):
         row = self._create_row(size)
         for variable_number, coefficient in self._equation.coefficients.items():
-            variable_number = self._renumerator.get(variable_number, variable_number)
-            row[int(variable_number)] = coefficient
+            _variable_number = self._renumerator.get(variable_number, variable_number)
+            row[int(_variable_number)] = coefficient
         return row
 
     def to_free_value(self):
@@ -166,7 +167,7 @@ def _solve(solver, model, strategy=VirtualValueStrategy.SYMMETRY):
 
     virtual_nodes = create_virtual_nodes()
     address_forwarder = create_address_forwarder()
-    virtual_nodes_equations = virtual_nodes_to_equations(virtual_nodes, address_forwarder, model)
+    virtual_nodes_equations = virtual_nodes_to_equations(virtual_nodes, model)
 
     all_equations = real_equations + virtual_nodes_equations
     all_variable_number = len(all_equations)
@@ -178,7 +179,6 @@ def _solve(solver, model, strategy=VirtualValueStrategy.SYMMETRY):
 
 def create_linear_system_of_equations_solver():
     def _solve(A, b):
-        np.set_printoptions(suppress=True, linewidth=500, threshold=np.nan)
         return np.linalg.solve(A, b[np.newaxis].T)
     return _solve
 
