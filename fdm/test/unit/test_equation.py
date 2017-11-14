@@ -460,6 +460,16 @@ class ElementTest(unittest.TestCase):
 
         self.assertEquals(expected, result)
 
+    def test_Division_TwoElements_ReturnLazyDivision(self):
+        e1 = self.ConcreteElement()
+        e2 = self.ConcreteElement()
+
+        result = e1 ** e2
+
+        expected = LazyOperation.power(e1, e2)
+
+        self.assertEquals(expected, result)
+
 
 class StencilTest(unittest.TestCase):
     def test_Create_NoAxesProvided_AssignAxisOneByDefault(self):

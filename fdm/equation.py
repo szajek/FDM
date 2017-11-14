@@ -282,6 +282,9 @@ class Element(metaclass=abc.ABCMeta):
     def __truediv__(self, other):
         return self._create_lazy_operation_with(LazyOperation.division, other)
 
+    def __pow__(self, other):
+        return self._create_lazy_operation_with(LazyOperation.power, other)
+
     def _create_lazy_operation_with(self, operation, other):
         if isinstance(other, Element):
             return operation(self, other)
