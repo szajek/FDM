@@ -218,6 +218,16 @@ class SchemeTest(unittest.TestCase):
 
         self.assertEqual(expected, result)
 
+    def test_Power_IntegerOrFloat_RaiseWeightsToGivenPower(self):
+
+        scheme = self._build_scheme(weights=(0., 2., 3.))
+
+        result = scheme**2
+
+        expected = self._build_scheme(weights=(0., 4., 9.))
+
+        self.assertEqual(expected, result)
+
     def test_ToCoefficients_Always_ReturnWeightsConsideringDeltaAndOrder(self):
 
         order = 2.

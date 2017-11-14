@@ -186,6 +186,13 @@ class Scheme(MutateMixin):
     def __imul__(self, other):
         return self.__mul__(other)
 
+    def __pow__(self, other):
+
+        if isinstance(other, (int, float)):
+            return self.mutate(weights={idx: e ** other for idx, e in self._weights.items()})
+        else:
+            raise NotImplementedError
+
     def __eq__(self, other):
         if isinstance(other, Scheme):
             return other._weights == self._weights and self._order == other.order
