@@ -1,13 +1,10 @@
-import abc
 import collections
 import enum
-import itertools
 
 import numpy as np
 np.set_printoptions(suppress=True, linewidth=500, threshold=np.nan)
-import sys
 
-from .equation import Delta, DynamicLinearEquationTemplate
+from .equation import Delta
 
 __all__ = ['LinearEquation', 'solve', 'VirtualValueStrategy']
 
@@ -56,8 +53,9 @@ def extract_virtual_nodes(equation, domain, strategy):
 
 def template_to_equation(template, model, node_address, delta=None):
     delta = Delta.from_connections(*model.domain.get_connections(node_address)) if delta is None else delta
+    scheme = template.operator(node_address)
     return LinearEquation(
-        template.operator(node_address).to_coefficients(delta),
+        scheme.to_coefficients(delta),
         template.free_value(node_address)
     )
 

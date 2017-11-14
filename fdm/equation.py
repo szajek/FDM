@@ -288,6 +288,7 @@ class LazyOperation(Element):
         SUMMATION = 1
         DIVISION = 2
         SUBTRACTION = 3
+        POWER = 4
 
     def __init__(self, operator, element_1, element_2):
         self._operator = operator
@@ -319,11 +320,16 @@ class LazyOperation(Element):
     def division(cls, *args):
         return cls(cls.Type.DIVISION, *args)
 
+    @classmethod
+    def power(cls, *args):
+        return cls(cls.Type.POWER, *args)
+
     _operators = {
         Type.MULTIPLICATION: lambda a, b: a * b,
         Type.SUMMATION: lambda a, b: a + b,
         Type.DIVISION: lambda a, b: a / b,
         Type.SUBTRACTION: lambda a, b: a - b,
+        Type.POWER: lambda a, b: a ** b,
     }
 
     def __eq__(self, other):

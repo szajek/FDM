@@ -669,6 +669,24 @@ class LazyOperationTest(unittest.TestCase):
         scheme_dividend.__truediv__.assert_called_once()
         scheme_divisor.__truediv__.assert_not_called()
 
+    def test_Power_Always_CallPowMagicForBaseScheme(self):
+        scheme_base = MagicMock()
+        scheme_exponent = MagicMock()
+
+        base = MagicMock(
+            expand=MagicMock(return_value=scheme_base)
+        )
+        exponent = MagicMock(
+            expand=MagicMock(return_value=scheme_exponent)
+        )
+
+        op = LazyOperation.power(base, exponent)
+        op.expand()
+
+        scheme_base.__pow__.assert_called_once()
+        scheme_exponent.__pow__.assert_not_called()
+
+
 
 class OperatorTest(unittest.TestCase):
 
