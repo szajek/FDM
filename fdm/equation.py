@@ -6,8 +6,27 @@ import math
 import dicttools
 import enum
 
-__all__ = ['Scheme', 'Element', 'Stencil', 'LocalizedStencil', 'DynamicStencil', 'LazyOperation', 'Operator', 'Number',
+__all__ = ['Scheme', 'Element', 'Stencil', 'DynamicElement', 'LazyOperation', 'Operator', 'Number',
            'NodeFunction', 'LinearEquationTemplate', 'Delta', 'DynamicLinearEquationTemplate', 'DispatchedOperator']
+
+
+class Immutable(type):
+    def __new__(msc, name, bases, nmspc):
+        new_class = type(name, bases, nmspc)
+
+        original_initialization = new_class.__init__
+
+        def set_attribute(self, key, value):
+            raise AttributeError("Attributes are immutable")
+
+        def wrapper(self, *args, **kwargs):
+            new_class.__setattr__ = object.__setattr__
+            original_initialization(self, *args, **kwargs)
+            new_class.__setattr__ = set_attribute
+
+        new_class.__init__ = wrapper
+
+        return new_class
 
 
 class MutateMixin:
@@ -98,31 +117,27 @@ NODE_TOLERANCE = 1e-4
 
 
 class Address:
-    slots = '_value', 'axis'
+    __slots__ = '_value', 'axis'
 
     def __init__(self, value, axes=None):
         self._value = value
         self.axes = axes if axes else (1,)
 
 
-class Scheme(MutateMixin):
-    slots = 'weights', 'order'
+class Scheme(MutateMixin, metaclass=Immutable):
+    __slots__ = 'weights', 'order'
 
     def __init__(self, weights, order=1):
-        self._weights = dicttools.FrozenDict(weights)
-        self._order = order
+        self.weights = dicttools.FrozenDict(weights)
+        self.order = order
 
-        MutateMixin.__init__(self, ('weights', '_weights'), ('order', '_order'))
-
-    @property
-    def order(self):
-        return self._order
+        MutateMixin.__init__(self, 'weights', 'order')
 
     def __iter__(self):
-        return sorted(self._weights.items()).__iter__()
+        return sorted(self.weights.items()).__iter__()
 
     def __len__(self):
-        return len(self._weights)
+        return len(self.weights)
 
     def __add__(self, other):
         if other is None:
@@ -130,7 +145,7 @@ class Scheme(MutateMixin):
         elif isinstance(other, Scheme):
             if not self._check_order_consistency(other):
                 raise AttributeError("All schemes in addition operation must have the same order")
-            return self.mutate(weights=merge_weights(self._weights, other._weights))
+            return self.mutate(weights=merge_weights(self.weights, other.weights))
         elif isinstance(other, (int, float)):
             return self.shift(other)
         else:
@@ -147,15 +162,15 @@ class Scheme(MutateMixin):
 
     def shift(self, number):
         return self.mutate(
-            weights={node + number: weight for node, weight in self._weights.items()}
+            weights={node + number: weight for node, weight in self.weights.items()}
         )
 
     def to_coefficients(self, delta):
-        delta = pow(delta, self._order)
+        delta = pow(delta, self.order)
 
         return Coefficients(merge_weights(*[
             self._distribute_to_closest_nodes(node_address, coeff / delta)
-            for node_address, coeff in self._weights.items()
+            for node_address, coeff in self.weights.items()
             ]))
 
     @staticmethod
@@ -173,7 +188,7 @@ class Scheme(MutateMixin):
     def __mul__(self, other):
 
         if isinstance(other, (int, float)):
-            return self.mutate(weights={idx: e * other for idx, e in self._weights.items()})
+            return self.mutate(weights={idx: e * other for idx, e in self.weights.items()})
         else:
             raise NotImplementedError
 
@@ -189,19 +204,19 @@ class Scheme(MutateMixin):
     def __pow__(self, other):
 
         if isinstance(other, (int, float)):
-            return self.mutate(weights={idx: e ** other for idx, e in self._weights.items()})
+            return self.mutate(weights={idx: e ** other for idx, e in self.weights.items()})
         else:
             raise NotImplementedError
 
     def __eq__(self, other):
         if isinstance(other, Scheme):
-            return other._weights == self._weights and self._order == other.order
+            return other.weights == self.weights and self.order == other.order
         else:
             raise NotImplementedError
 
     def __repr__(self):
         return "{name}: {data} of order {order}".format(
-            name=self.__class__.__name__, data=self._weights, order=self._order)
+            name=self.__class__.__name__, data=self.weights, order=self.order)
 
     def duplicate(self):
         return self.mutate()
@@ -378,6 +393,10 @@ class Stencil(Element, MutateMixin):
             {node_address: weights_provider(i, node_address) for i, node_address in enumerate(stencil_nodes_addresses)},
             **kwargs)
 
+    @classmethod
+    def from_scheme(cls, scheme):
+        return Stencil(scheme.weights, order=scheme.order)
+
     def __init__(self, weights, axis=1, order=1.):
         self._weights = weights
         self._axis = axis
@@ -406,19 +425,7 @@ class Stencil(Element, MutateMixin):
             return False
 
 
-class LocalizedStencil(Element):
-    def __init__(self, stencil, modifier):
-        self._stencil = stencil
-        self._modifier = modifier
-
-    def expand(self, address):
-        return self._modifier(address, self._stencil).expand(address)
-
-    def __getattr__(self, item):
-        return getattr(self._stencil, item)
-
-
-class DynamicStencil(Element):
+class DynamicElement(Element):
     def __init__(self, builder):
         self._builder = builder
 
@@ -440,7 +447,7 @@ class DispatchedOperator(Element):
         scheme_0 = self._parent.expand(address)
         scheme_0 = scheme_0.shift(-address)
 
-        coeffs = list(sorted(scheme_0._weights.items()))
+        coeffs = list(sorted(scheme_0.weights.items()))
         start_stencil = Stencil(dict(coeffs[:1]), order=scheme_0.order)
         center_stencil = Stencil(dict(coeffs[1:-1]), order=scheme_0.order)
         end_stencil = Stencil(dict(coeffs[-1:]), order=scheme_0.order)
@@ -457,6 +464,10 @@ class Operator(Element):
 
     def expand(self, address):
         return operate(self._stencil.expand(address), self._element)
+
+    def to_stencil(self, address):
+        scheme = self.expand(address).shift(-address)
+        return Stencil(scheme.weights, order=scheme.order)
 
     def __repr__(self):
         return "{name}: {scheme}".format(name=self.__class__.__name__, scheme=self._stencil)

@@ -50,7 +50,7 @@ class OperatorTest(unittest.TestCase):
             )
         )
 
-        result = sum(linear_operator.expand(node_address)._weights.values())
+        result = sum(linear_operator.expand(node_address).weights.values())
 
         expected = 200*node_address  # (g*f)' = g'*f + g*f' = 1*100x + x*100 = 200x
 

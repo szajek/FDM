@@ -2,13 +2,30 @@ import math
 import unittest
 from mock import MagicMock, patch
 
-from fdm.equation import (LazyOperation, Operator, Stencil, LocalizedStencil, DynamicStencil, Scheme, Number, Element, \
+from fdm.equation import (LazyOperation, Operator, Stencil, DynamicElement, Scheme, Number, Element, \
                           Delta, NodeFunction, operate, merge_weights, Coefficients, MutateMixin, DynamicLinearEquationTemplate,
-                          DispatchedOperator)
+                          DispatchedOperator, Immutable)
 
 
 def _are_the_same_objects(obj, mutated):
     return obj is mutated
+
+
+class Foo(metaclass=Immutable):
+    def __init__(self):
+        self.boo = 1
+
+    def __setattr__(self, key, value):
+        print('org __setattr__', key, value)
+
+
+class ImmutableTest(unittest.TestCase):
+    def test_Setattr_Always_RaiseAttributeError(self):
+
+        obj = Foo()
+        print(obj.__setattr__)
+        with self.assertRaises(AttributeError):
+            obj.boo = 2
 
 
 class MutateMixinTest(unittest.TestCase):
@@ -479,13 +496,24 @@ class StencilTest(unittest.TestCase):
             stencil._axis
         )
 
+    def test_FromScheme_Always_CreateUsingWeightsAndOrderFromScheme(self):
+
+        weights, order = {1: -2}, 3
+        scheme = Scheme(weights, order=order)
+
+        result = Stencil.from_scheme(scheme)
+
+        expected = Stencil(weights, order=order)
+
+        self.assertEqual(expected, result)
+
     def test_Expand_OrderDifferentThanOne_CreateSchemeWithGivenOrder(self):
 
         stencil_order = 1.2
         s = Stencil({}, order=stencil_order)
 
         expanded = s.expand(0.)
-        order = expanded._order
+        order = expanded.order
 
         self.assertEqual(stencil_order, order)
 
@@ -554,25 +582,7 @@ class StencilTest(unittest.TestCase):
         return len(d1) == len(d2) and all(math.fabs(d1[k] - d2[k]) < tol for k in d1.keys())
 
 
-class LocalizedStencilTest(unittest.TestCase):
-    def _test_Expand_Always_ModifyWeightAndOrderUsingProvidedFunction(self):
-        stencil = Stencil({-8: 1.}, order=2.)
-        new_weights = {4.: 9.}
-        new_order = 4.
-
-        def modifier(node_address, scheme):
-            return Scheme(new_weights, order=new_order)
-
-        modified_stencil = LocalizedStencil(stencil, modifier)
-
-        result = modified_stencil.expand(0.)
-
-        expected = Scheme(new_weights, new_order)
-
-        self.assertEqual(expected, result)
-
-
-class DynamicStencilTest(unittest.TestCase):
+class DynamicElementTest(unittest.TestCase):
     def _test_Expand_Always_BuildStencilForGivenAddress(self):
         expected_weights = {4.: 9.}
         expected_order = 4.
@@ -580,7 +590,7 @@ class DynamicStencilTest(unittest.TestCase):
         def builder(node_address):
             return Stencil(expected_weights, order=expected_order)
 
-        dynamic_stencil = DynamicStencil(builder)
+        dynamic_stencil = DynamicElement(builder)
 
         result = dynamic_stencil.expand(0.)
 
@@ -707,7 +717,6 @@ class LazyOperationTest(unittest.TestCase):
         scheme_exponent.__pow__.assert_not_called()
 
 
-
 class OperatorTest(unittest.TestCase):
 
     def test_Expand_NoElement_ReturnStencilSchemeShiftedToNodeAddress(self):
@@ -719,6 +728,30 @@ class OperatorTest(unittest.TestCase):
         result = operator.expand(-2)
 
         expected = Scheme(stencil_weights).shift(-2)
+
+        self.assertEqual(expected, result)
+
+    def test_ToStencil_Origin_CreateStencilByExpansionForOrigin(self):
+        stencil = Stencil.central(1.)
+        operator = Operator(stencil,
+                            Operator(stencil)
+                            )
+
+        result = operator.to_stencil(0.)
+
+        expected = Stencil({-1.: 1., 0.: -2., 1.: 1.}, order=2.)
+
+        self.assertEqual(expected, result)
+
+    def test_ToStencil_NotOrigin_CreateStencilByExpansionForAddressAndMoveToOrigin(self):
+        stencil = Stencil.central(1.)
+        operator = Operator(stencil,
+                            Operator(stencil)
+                            )
+
+        result = operator.to_stencil(2.)
+
+        expected = Stencil({-1.: 1., 0.: -2., 1.: 1.}, order=2.)
 
         self.assertEqual(expected, result)
 
