@@ -3,8 +3,8 @@ import unittest
 from mock import MagicMock, patch
 
 from fdm.equation import (LazyOperation, Operator, Stencil, DynamicElement, Scheme, Number, Element, \
-                          Delta, NodeFunction, operate, merge_weights, Coefficients, MutateMixin, DynamicLinearEquationTemplate,
-                          DispatchedOperator, Immutable)
+                          Delta, NodeFunction, operate, merge_weights, Coefficients, MutateMixin,
+                          Immutable)
 
 
 def _are_the_same_objects(obj, mutated):
@@ -487,6 +487,30 @@ class ElementTest(unittest.TestCase):
 
         self.assertEquals(expected, result)
 
+    def test_ToStencil_Origin_CreateStencilByExpansionForOrigin(self):
+        stencil = Stencil.central(1.)
+        operator = Operator(stencil,
+                            Operator(stencil)
+                            )
+
+        result = operator.to_stencil(0.)
+
+        expected = Stencil({-1.: 1., 0.: -2., 1.: 1.}, order=2.)
+
+        self.assertEqual(expected, result)
+
+    def test_ToStencil_NotOrigin_CreateStencilByExpansionForAddressAndMoveToOrigin(self):
+        stencil = Stencil.central(1.)
+        operator = Operator(stencil,
+                            Operator(stencil)
+                            )
+
+        result = operator.to_stencil(2.)
+
+        expected = Stencil({-1.: 1., 0.: -2., 1.: 1.}, order=2.)
+
+        self.assertEqual(expected, result)
+
 
 class StencilTest(unittest.TestCase):
     def test_Create_NoAxesProvided_AssignAxisOneByDefault(self):
@@ -578,6 +602,26 @@ class StencilTest(unittest.TestCase):
 
         self.assertEqual(expected, result)
 
+    def test_Start_Always_ReturnTheLowestAddress(self):
+
+        stencil = Stencil({-3.: 1., -5.: 0.})
+
+        result = stencil.start
+
+        expected = -5
+
+        self.assertEqual(expected, result)
+
+    def test_End_Always_ReturnTheHighestAddress(self):
+
+        stencil = Stencil({-3.: 1., -2.: 0.})
+
+        result = stencil.end
+
+        expected = -2
+
+        self.assertEqual(expected, result)
+
     def _compare_dict(self, d1, d2, tol=1e-4):
         return len(d1) == len(d2) and all(math.fabs(d1[k] - d2[k]) < tol for k in d1.keys())
 
@@ -595,37 +639,6 @@ class DynamicElementTest(unittest.TestCase):
         result = dynamic_stencil.expand(0.)
 
         expected = Scheme(expected_weights, expected_order)
-
-        self.assertEqual(expected, result)
-
-
-class DispatchedOperatorTest(unittest.TestCase):
-    def test_Expand_Always_UseDynamicElementByLocal(self):
-        operator = Operator(
-            Stencil({-2: 1, -1: 1, 1: 1, 2: 1})
-        )
-        element_start = MagicMock(
-            expand=MagicMock(return_value=Scheme({-10: 1.}))
-        )
-        element_center = MagicMock(
-            expand=MagicMock(return_value=Scheme({0: 2.}))
-        )
-        element_end = MagicMock(
-            expand=MagicMock(return_value=Scheme({10: 3.}))
-        )
-
-        def dispatcher(position):
-            return {
-                DispatchedOperator.Position.START: element_start,
-                DispatchedOperator.Position.CENTER: element_center,
-                DispatchedOperator.Position.END: element_end,
-            }[position]
-
-        dispatcher = DispatchedOperator(operator, dispatcher)
-
-        result = dispatcher.expand(0)
-
-        expected = Scheme({-10: 1., 0: 2.*2., 10: 3.}, order=2)
 
         self.assertEqual(expected, result)
 
@@ -731,27 +744,31 @@ class OperatorTest(unittest.TestCase):
 
         self.assertEqual(expected, result)
 
-    def test_ToStencil_Origin_CreateStencilByExpansionForOrigin(self):
-        stencil = Stencil.central(1.)
-        operator = Operator(stencil,
-                            Operator(stencil)
-                            )
+    def test_Expand_ElementAsDispatcher_UseDynamicElementByLocal(self):
+        stencil = Stencil({-2: 1, -1: 1, 1: 1, 2: 1})
 
-        result = operator.to_stencil(0.)
+        element_start = MagicMock(
+            expand=MagicMock(return_value=Scheme({-10: 1.}))
+        )
+        element_center = MagicMock(
+            expand=MagicMock(return_value=Scheme({0: 2.}))
+        )
+        element_end = MagicMock(
+            expand=MagicMock(return_value=Scheme({10: 3.}))
+        )
 
-        expected = Stencil({-1.: 1., 0.: -2., 1.: 1.}, order=2.)
+        def dispatcher(relative, position):
+            return {
+                -1: element_start,
+                0: element_center,
+                1: element_end,
+            }[position]
 
-        self.assertEqual(expected, result)
+        dispatcher = Operator(stencil, dispatcher)
 
-    def test_ToStencil_NotOrigin_CreateStencilByExpansionForAddressAndMoveToOrigin(self):
-        stencil = Stencil.central(1.)
-        operator = Operator(stencil,
-                            Operator(stencil)
-                            )
+        result = dispatcher.expand(3)
 
-        result = operator.to_stencil(2.)
-
-        expected = Stencil({-1.: 1., 0.: -2., 1.: 1.}, order=2.)
+        expected = Scheme({-10: 1., 0: 2. * 2., 10: 3.}, order=2)
 
         self.assertEqual(expected, result)
 
@@ -843,67 +860,3 @@ class NodeFunctionTest(unittest.TestCase):
         expected = interpolator(0.2, 1., 2., 1., 2.)
 
         self.assertAlmostEqual(expected, result)
-
-
-class DynamicLinearEquationTemplateTest(unittest.TestCase):
-    def test_Get_NodeAddressNotRegistered_ReturnDefaultEquation(self):
-
-        _node_address = 2.
-        default_template = MagicMock()
-
-        equation = DynamicLinearEquationTemplate(default_template)
-
-        result = equation.get(_node_address)
-
-        expected = default_template
-
-        self.assertEqual(expected, result)
-
-    def test_Get_NodeAddressIsRegistered_ReturnRegisteredEquation(self):
-
-        _node_address = 2.
-        default_template = MagicMock()
-        node_template = MagicMock()
-
-        equation = DynamicLinearEquationTemplate(default_template)
-        equation.set(2, node_template)
-
-        result = equation.get(_node_address)
-
-        expected = node_template
-
-        self.assertEqual(expected, result)
-
-    def test_Operator_NodeAddressIsNotRegistered_ReturnDefaultEquationOperator(self):
-
-        _node_address = 2.
-        default_template = MagicMock(
-            operator=MagicMock(return_value='default_template')
-        )
-
-        equation = DynamicLinearEquationTemplate(default_template)
-
-        result = equation.operator(_node_address)
-
-        expected = 'default_template'
-
-        self.assertEqual(expected, result)
-
-    def test_Operator_NodeAddressIsRegistered_ReturnRegisteredEquationOperator(self):
-
-        _node_address = 2.
-        default_template = MagicMock(
-            operator=MagicMock(return_value='default_template')
-        )
-        node_template = MagicMock(
-            operator=MagicMock(return_value='node_template')
-        )
-
-        equation = DynamicLinearEquationTemplate(default_template)
-        equation.set(2, node_template)
-
-        result = equation.operator(_node_address)
-
-        expected = 'node_template'
-
-        self.assertEqual(expected, result)

@@ -1,13 +1,13 @@
 import abc
 import collections
+import enum
 import functools
 import math
 
 import dicttools
-import enum
 
 __all__ = ['Scheme', 'Element', 'Stencil', 'DynamicElement', 'LazyOperation', 'Operator', 'Number',
-           'NodeFunction', 'LinearEquationTemplate', 'Delta', 'DynamicLinearEquationTemplate', 'DispatchedOperator']
+           'NodeFunction', 'LinearEquationTemplate', 'Delta']
 
 
 class Immutable(type):
@@ -306,6 +306,18 @@ class Element(metaclass=abc.ABCMeta):
         else:
             raise NotImplementedError
 
+    def to_stencil(self, address):
+        scheme = self.expand(address).shift(-address)
+        return Stencil(scheme.weights, order=scheme.order)
+
+
+class DynamicElement(Element):
+    def __init__(self, builder):
+        self._builder = builder
+
+    def expand(self, address):
+        return self._builder(address).expand(address)
+
 
 class LazyOperation(Element):
     class Type(enum.Enum):
@@ -408,6 +420,14 @@ class Stencil(Element, MutateMixin):
     def order(self):
         return self._order
 
+    @property
+    def start(self):
+        return min(self._weights.keys())
+
+    @property
+    def end(self):
+        return max(self._weights.keys())
+
     def expand(self, address):
         return Scheme(self._weights, order=self._order) + address
 
@@ -425,49 +445,29 @@ class Stencil(Element, MutateMixin):
             return False
 
 
-class DynamicElement(Element):
-    def __init__(self, builder):
-        self._builder = builder
-
-    def expand(self, address):
-        return self._builder(address).expand(address)
-
-
-class DispatchedOperator(Element):
-    class Position(enum.Enum):
-        START = 0
-        CENTER = 1
-        END = 2
-
-    def __init__(self, parent, element_dispatcher):
-        self._parent = parent
-        self._element_dispatcher = element_dispatcher
-
-    def expand(self, address, *args, **kw):
-        scheme_0 = self._parent.expand(address)
-        scheme_0 = scheme_0.shift(-address)
-
-        coeffs = list(sorted(scheme_0.weights.items()))
-        start_stencil = Stencil(dict(coeffs[:1]), order=scheme_0.order)
-        center_stencil = Stencil(dict(coeffs[1:-1]), order=scheme_0.order)
-        end_stencil = Stencil(dict(coeffs[-1:]), order=scheme_0.order)
-        start = operate(start_stencil.expand(address), self._element_dispatcher(self.Position.START))
-        center = operate(center_stencil.expand(address), self._element_dispatcher(self.Position.CENTER))
-        end = operate(end_stencil.expand(address), self._element_dispatcher(self.Position.END))
-        return start + center + end
-
-
 class Operator(Element):
     def __init__(self, stencil, element=None):
         self._stencil = stencil
         self._element = element
 
     def expand(self, address):
-        return operate(self._stencil.expand(address), self._element)
+        return operate(
+            self._stencil.expand(address),
+            self._dispatch(address) if callable(self._element) else self._element
+        )
 
-    def to_stencil(self, address):
-        scheme = self.expand(address).shift(-address)
-        return Stencil(scheme.weights, order=scheme.order)
+    def _dispatch(self, reference):
+        def build_child_operator(address):
+            relative = address - reference
+            return self._element(
+                relative,
+                {
+                    self._stencil.start: -1,
+                    self._stencil.end: 1,
+                }.get(relative, 0)
+            )
+
+        return DynamicElement(build_child_operator)
 
     def __repr__(self):
         return "{name}: {scheme}".format(name=self.__class__.__name__, scheme=self._stencil)
@@ -523,29 +523,3 @@ class NodeFunction:
 #
 
 LinearEquationTemplate = collections.namedtuple('LinearEquationTemplate', ('operator', 'free_value'))
-
-
-class DynamicLinearEquationTemplate:
-    def __init__(self, default):
-        self._default = default
-        self._register = {}
-
-    def get(self, address):
-        return self._register.get(address, self._default)
-
-    def set(self, address, template):
-        self._register[address] = template
-
-    def __getitem__(self, address):
-        return self.get(address)
-
-    def __setitem__(self, address, equation):
-        return self.set(address, equation)
-
-    @property
-    def operator(self):
-        return lambda address: self.get(address).operator(address)
-
-    @property
-    def free_value(self):
-        return lambda address: self.get(address).free_value(address)
