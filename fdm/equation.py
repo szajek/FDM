@@ -3,6 +3,7 @@ import collections
 import enum
 import functools
 import math
+import types
 
 import dicttools
 
@@ -453,7 +454,7 @@ class Operator(Element):
     def expand(self, address):
         return operate(
             self._stencil.expand(address),
-            self._dispatch(address) if callable(self._element) else self._element
+            self._dispatch(address) if self._is_element_dispachable() else self._element
         )
 
     def _dispatch(self, reference):
@@ -471,6 +472,9 @@ class Operator(Element):
 
     def __repr__(self):
         return "{name}: {scheme}".format(name=self.__class__.__name__, scheme=self._stencil)
+
+    def _is_element_dispachable(self):
+        return not (isinstance(self._element, Element) or self._element is None)
 
 
 class Number(Element):
