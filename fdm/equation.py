@@ -464,8 +464,8 @@ class Operator(Element):
             return self._element(
                 relative,
                 {
-                    operator_scheme.start - address: -1,
-                    operator_scheme.end - address: 1,
+                    operator_scheme.start - reference: -1,
+                    operator_scheme.end - reference: 1,
                 }.get(relative, 0)
             )
 

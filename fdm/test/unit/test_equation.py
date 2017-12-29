@@ -741,7 +741,7 @@ class OperatorTest(unittest.TestCase):
         self.assertEqual(expected, result)
 
     def test_Expand_ElementAsDispatcher_UseDynamicElementByLocal(self):
-        stencil = Stencil({-2: 1, -1: 1, 1: 1, 2: 1})
+        stencil = Stencil({-2: 1, -1: 1, 1: 3, 2: 1})
 
         element_start = MagicMock(
             expand=MagicMock(return_value=Scheme({-10: 1.}))
@@ -764,7 +764,7 @@ class OperatorTest(unittest.TestCase):
 
         result = dispatcher.expand(3)
 
-        expected = Scheme({-10: 1., 0: 2. * 2., 10: 3.}, order=2)
+        expected = Scheme({-10: 1., 0: 2.*1. + 2.*3., 10: 3.}, order=2)
 
         self.assertEqual(expected, result)
 
