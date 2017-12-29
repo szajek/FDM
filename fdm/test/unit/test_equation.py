@@ -15,9 +15,6 @@ class Foo(metaclass=Immutable):
     def __init__(self):
         self.boo = 1
 
-    def __setattr__(self, key, value):
-        print('org __setattr__', key, value)
-
 
 class ImmutableTest(unittest.TestCase):
     def test_Setattr_Always_RaiseAttributeError(self):
@@ -303,6 +300,25 @@ class SchemeTest(unittest.TestCase):
         result = [k for k, v in s]
 
         expected = [-5, -3, 1, 10]
+
+        self.assertEqual(expected, result)
+
+    def test_Start_Always_ReturnTheLowestAddress(self):
+
+        scheme = Scheme({-3.: 1., -5.: 0.})
+
+        result = scheme.start
+
+        expected = -5
+
+        self.assertEqual(expected, result)
+
+    def test_End_Always_ReturnTheHighestAddress(self):
+        scheme = Scheme({-3.: 1., -2.: 0.})
+
+        result = scheme.end
+
+        expected = -2
 
         self.assertEqual(expected, result)
 
@@ -599,26 +615,6 @@ class StencilTest(unittest.TestCase):
         result = stencil.scale(2.)
 
         expected = Stencil({-6.: -6.5, 6.: 2.5})
-
-        self.assertEqual(expected, result)
-
-    def test_Start_Always_ReturnTheLowestAddress(self):
-
-        stencil = Stencil({-3.: 1., -5.: 0.})
-
-        result = stencil.start
-
-        expected = -5
-
-        self.assertEqual(expected, result)
-
-    def test_End_Always_ReturnTheHighestAddress(self):
-
-        stencil = Stencil({-3.: 1., -2.: 0.})
-
-        result = stencil.end
-
-        expected = -2
 
         self.assertEqual(expected, result)
 

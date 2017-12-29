@@ -222,6 +222,14 @@ class Scheme(MutateMixin, metaclass=Immutable):
     def duplicate(self):
         return self.mutate()
 
+    @property
+    def start(self):
+        return min(self.weights.keys())
+
+    @property
+    def end(self):
+        return max(self.weights.keys())
+
     @classmethod
     def from_number(cls, node_address, value):
         return Scheme({node_address: value}, order=0.)
@@ -421,14 +429,6 @@ class Stencil(Element, MutateMixin):
     def order(self):
         return self._order
 
-    @property
-    def start(self):
-        return min(self._weights.keys())
-
-    @property
-    def end(self):
-        return max(self._weights.keys())
-
     def expand(self, address):
         return Scheme(self._weights, order=self._order) + address
 
@@ -452,19 +452,20 @@ class Operator(Element):
         self._element = element
 
     def expand(self, address):
+        operator_scheme = self._stencil.expand(address)
         return operate(
-            self._stencil.expand(address),
-            self._dispatch(address) if self._is_element_dispachable() else self._element
+            operator_scheme,
+            self._dispatch(address, operator_scheme) if self._is_element_dispachable() else self._element
         )
 
-    def _dispatch(self, reference):
+    def _dispatch(self, reference, operator_scheme):
         def build_child_operator(address):
             relative = address - reference
             return self._element(
                 relative,
                 {
-                    self._stencil.start: -1,
-                    self._stencil.end: 1,
+                    operator_scheme.start - address: -1,
+                    operator_scheme.end - address: 1,
                 }.get(relative, 0)
             )
 
