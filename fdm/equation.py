@@ -460,13 +460,10 @@ class Operator(Element):
 
     def _dispatch(self, reference, operator_scheme):
         def build_child_operator(address):
-            relative = address - reference
             return self._element(
-                relative,
-                {
-                    operator_scheme.start - reference: -1,
-                    operator_scheme.end - reference: 1,
-                }.get(relative, 0)
+                operator_scheme.start - reference,
+                operator_scheme.end - reference,
+                address - reference,
             )
 
         return DynamicElement(build_child_operator)

@@ -753,12 +753,11 @@ class OperatorTest(unittest.TestCase):
             expand=MagicMock(return_value=Scheme({10: 3.}))
         )
 
-        def dispatcher(relative, position):
+        def dispatcher(start, end, position):
             return {
-                -1: element_start,
-                0: element_center,
-                1: element_end,
-            }[position]
+                start: element_start,
+                end: element_end,
+            }.get(position, element_center)
 
         dispatcher = Operator(stencil, dispatcher)
 
