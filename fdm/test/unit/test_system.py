@@ -3,87 +3,67 @@ import unittest
 import numpy as np
 from mock import MagicMock
 
+from fdm import Mesh1DBuilder, Mesh
 from fdm.equation import Scheme, LinearEquationTemplate
-from fdm.system import (LinearEquation, model_to_equations, VirtualNode, EquationWriter,
-                        extract_virtual_nodes, Output, VirtualValueStrategy, virtual_nodes_to_equations)
+from fdm.geometry import Point
+from fdm.system import (LinearEquation, model_to_equations, EquationWriter,
+                        Output,
+                        create_variables)
 
 
-def create_domain(node_number, delta=2.):
-    domain = MagicMock(
-        nodes=[MagicMock() for i in range(node_number)],
-        calc_average_delta=lambda i: delta,
+def create_mesh(node_number, virtual_nodes=(), delta=2.):
+    length = delta*node_number
+    return Mesh(
+        [Point(i*length/(node_number - 1)) for i in range(node_number)],
+        virtual_nodes,
     )
-    return domain
-
-
-class ExtractVirtualNodesTest(unittest.TestCase):
-    def test_Call_ExistAndSymmetryStrategy_ReturnVirtualNode(self):
-        domain = create_domain(3)
-        eq = LinearEquation({-1: 2., 3: 3., 1: 1.}, 1.)
-
-        result = extract_virtual_nodes(eq, domain, strategy=VirtualValueStrategy.SYMMETRY)
-
-        expected = [VirtualNode(3, 1), VirtualNode(-1, 1)]
-
-        self.assertEqual(expected, result)
-
-    def test_Call_ExistAndAsBorderStrategy_ReturnVirtualNode(self):
-        domain = create_domain(3)
-        eq = LinearEquation({-1: 2., 3: 3., 1: 1.}, 1.)
-
-        result = extract_virtual_nodes(eq, domain, strategy=VirtualValueStrategy.AS_IN_BORDER)
-
-        expected = [VirtualNode(3, 2), VirtualNode(-1, 0)]
-
-        self.assertEqual(expected, result)
 
 
 class ModelToEquationsTest(unittest.TestCase):
-    def test_Call_Always_ReturnEquationsCreatedBasedOnGivenTemplateAndDomain(self):
+    def test_Call_Always_ReturnEquationsCreatedBasedOnGivenTemplateAndMesh(self):
         def get_scheme(i):
-            return Scheme({i: i})
+            return Scheme({i: i.x})
 
         def get_free_value(i):
-            return i
+            return i.x
 
-        node_span = 2.
-        node_number = 3
+        length = 2.
+        mesh_builder = Mesh1DBuilder(length=length)
+        mesh_builder.add_uniformly_distributed_nodes(3)
+        mesh = mesh_builder.create()
 
         equation = LinearEquationTemplate(get_scheme, get_free_value)
 
         model = MagicMock(
-            domain=MagicMock(
-                nodes=[MagicMock() for node_address in range(node_number)],
-                get_connections=MagicMock(
-                    return_value=[MagicMock(length=node_span) for node_address in range(node_number - 1)]
-                )
-            ),
+            mesh=mesh,
             bcs={},
             equation=equation,
         )
 
         equations = model_to_equations(model)
 
+        expected_coefficients = [
+            Scheme({0: 0}),
+            Scheme({1: 1}),
+            Scheme({2: 2}),
+        ]
+
         for equation_number in range(0, 3):
             equation = equations[equation_number]
 
-            expected_coefficients = {equation_number: equation_number/node_span}
-            expected_free_value = get_free_value(equation_number)
+            expected_free_value = get_free_value(Point(equation_number))
 
-            self.assertEqual(expected_coefficients, equation.coefficients)
+            self.assertEqual(expected_coefficients[equation_number], equation.scheme)
             self.assertEqual(expected_free_value, equation.free_value)
 
 
 class EquationWriterTest(unittest.TestCase):
-    def test_ToCoefficientsArray_RenumeratorNotProvided_ReturnArrayWithWeights(self):
-        eq = LinearEquation({0: 2.}, 1.)
+    def test_ToCoefficientsArray_PointNotFound_Raise(self):
+        eq = LinearEquation(Scheme({0: 2.}), 1.)
         writer = EquationWriter(eq, {})
 
-        result = writer.to_coefficients_array(3)
-
-        expected = np.array([2., 0., 0.])
-
-        np.testing.assert_allclose(expected, result)
+        with self.assertRaises(AttributeError):
+            writer.to_coefficients_array(3)
 
     def test_ToCoefficientsArray_RenumeratorProvided_ReturnArrayWithWeightsInRenumberedPosition(self):
         eq = LinearEquation({0: 2.}, 1.)
@@ -106,58 +86,39 @@ class EquationWriterTest(unittest.TestCase):
         np.testing.assert_allclose(expected, result)
 
 
-class VirtualNodeToEquationTest(unittest.TestCase):
-    def test_Call_VirtualNodeNotInBcs_Alwyas_ReturnEquation(self):
-        virtual_node = VirtualNode(-1, 1)
-        model = MagicMock()
+class CreateVariablesTest(unittest.TestCase):
+    def test_Call_OnlyRealNodes_ReturnNodeToVariableNumberMapper(self):
+        real_nodes = n1, n2 = Point(1.), Point(2.)
 
-        result = self._convert([virtual_node], model)
+        grid = self._create_grid(real_nodes)
 
-        expected = [LinearEquation(
-            coefficients={1: -1., -1: 1.},
-            free_value=0.
-        )]
+        result = create_variables(grid)
+
+        expected = {n1: 0, n2: 1}
 
         self.assertEqual(expected, result)
 
-    def test_Call_VirtualNodeInBcs_Alwyas_ReturnEquation(self):
-        virtual_node = VirtualNode(-1, 1)
-        model = MagicMock(
-            bcs={
-                -1: MagicMock(
-                    operator=MagicMock(
-                        return_value=MagicMock(
-                            to_coefficients=lambda a: {999: 222}
-                        )
-                    ),
-                    free_value=MagicMock(
-                        return_value=-999.
-                    )
-                )
-            },
-            domain=MagicMock(
-                nodes=[1, 2, 3],
-                get_connections=lambda a: [
-                    MagicMock(length=1),
-                    MagicMock(length=1),
-                ],
-            )
+    def test_Call_RealAndVirtualNodes_ReturnNodeToVariableNumberMapper(self):
+        real_nodes = n1, n2 = Point(1.), Point(2.)
+        virtual_nodes = v1, v2 = Point(-1.), Point(3.)
+
+        grid = self._create_grid(real_nodes, virtual_nodes)
+
+        result = create_variables(grid)
+
+        expected = {n1: 0, n2: 1, v1: 2, v2: 3}
+
+        self.assertEqual(expected, result)
+
+    def _create_grid(self, real_nodes, virtual_nodes=()):
+        return Mesh(
+            real_nodes,
+            virtual_nodes=virtual_nodes
         )
-
-        result = self._convert([virtual_node], model)
-
-        expected = [LinearEquation(
-            coefficients={999: 222},
-            free_value=-999.
-        )]
-        self.assertEqual(expected, result)
-
-    def _convert(self, *args):
-        return virtual_nodes_to_equations(*args)
 
 
 class OutputTest(unittest.TestCase):
-    def test_GetItem_IndexInDomain_ReturnValueInRealNode(self):
+    def test_GetItem_IndexInMesh_ReturnValueInRealNode(self):
         value = 2
         o = Output([1, value, 3], 2, {})
 

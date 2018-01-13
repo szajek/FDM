@@ -1,6 +1,7 @@
 import unittest
 
-from fdm.equation import Operator, Stencil, Number, Scheme, LazyOperation, NodeFunction
+from fdm.equation import Operator, Stencil, Number, Scheme, LazyOperation
+from fdm.geometry import Point
 
 
 class OperatorTest(unittest.TestCase):
@@ -12,7 +13,7 @@ class OperatorTest(unittest.TestCase):
             Number(value)
         )
 
-        result = linear_operator.expand(0)
+        result = linear_operator.expand(Point(0))
 
         expected = Scheme({-1: -0.5, 1: 0.5}) * value
 
@@ -26,7 +27,7 @@ class OperatorTest(unittest.TestCase):
             Number(value)
         )
 
-        result = linear_operator.expand(3)
+        result = linear_operator.expand(Point(3))
 
         expected = Scheme({2: -0.5, 4: 0.5}) * value
 
@@ -34,25 +35,25 @@ class OperatorTest(unittest.TestCase):
 
     def test_FirstOrder_FunctionMultiplication_GenerateProperCoefficients(self):
 
-        node_address = 3.
+        point = Point(3.)
 
-        def g(address):
-            return address
+        def g(point):
+            return point.x
 
-        def f(address):
-            return 100*address
+        def f(point):
+            return 100 * point.x
 
         linear_operator = Operator(
             Stencil.central(),
             LazyOperation.multiplication(
-                Number(NodeFunction(g)),
-                Number(NodeFunction(f))
+                Number(g),
+                Number(f)
             )
         )
 
-        result = sum(linear_operator.expand(node_address).weights.values())
+        result = sum(linear_operator.expand(point)._weights.values())
 
-        expected = 200*node_address  # (g*f)' = g'*f + g*f' = 1*100x + x*100 = 200x
+        expected = 200*point.x  # (g*f)' = g'*f + g*f' = 1*100x + x*100 = 200x
 
         self.assertEqual(expected, result)
 
@@ -67,9 +68,9 @@ class OperatorTest(unittest.TestCase):
             )
         )
 
-        result = linear_operator.expand(3)
+        result = linear_operator.expand(Point(3))
 
-        expected = Scheme({2: 1., 3: -2., 4: 1.}, order=2.) * value
+        expected = Scheme({2: 1., 3: -2., 4: 1.}) * value
 
         self.assertEqual(expected, result)
 
@@ -85,7 +86,7 @@ class LazyOperationTest(unittest.TestCase):
 
         s = LazyOperation.summation(s1, s2)
 
-        result = s.expand(0)
+        result = s.expand(Point(0))
 
         expected = Scheme({-0.5: w1*2, 0.0: w2*2})
 

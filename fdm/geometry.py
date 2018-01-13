@@ -1,30 +1,122 @@
+import functools
+
+from fdm.utils import Immutable
 
 
-def subtract_or_return_zero(value_1, value_2):
-    return 0. if None in [value_1, value_2] else (value_1 - value_2)
+COORDS_HASH_ACCURACY = 7
+COORDS_EQ_ACCURACY = 1e-8
+INFINITY = 9e9
 
 
-class Point:
-    def __init__(self, x, y=None, z=None):
+@functools.total_ordering
+class Point(metaclass=Immutable):
+    def __init__(self, x=0., y=0., z=0.):
         self.x = x
         self.y = y
         self.z = z
 
+        self._hash = self._create_hash()
 
-class Vector:
+    def translate(self, vector):
+        return Point(*(c + d for c, d in zip(self, vector.components)))
+
+    def __add__(self, other):
+        if isinstance(other, Vector):
+            return self.translate(other)
+        else:
+            raise NotImplementedError
+
+    def __iadd__(self, other):
+        return self.__add__(self, other)
+
+    def __sub__(self, other):
+        if isinstance(other, Vector):
+            return self.translate(-other)
+        else:
+            raise NotImplementedError
+
+    def __mul__(self, other):
+        if isinstance(other, (int, float)):
+            return Point(*(c*other for c in self))
+        else:
+            raise NotImplementedError
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
+
+    def __imul__(self, other):
+        return self.__mul__(self, other)
+
+    def __neg__(self):
+        return Point(*(-c for c in self))
+
+    def __hash__(self):
+        return self._hash
+
+    def _create_hash(self):
+        return hash(
+            (
+                round(self.x, COORDS_HASH_ACCURACY),
+                round(self.y, COORDS_HASH_ACCURACY),
+                round(self.z, COORDS_HASH_ACCURACY))
+        )
+
+    def __eq__(self, other):
+        if isinstance(other, Point):
+            return all([abs(c1 - c2) < COORDS_EQ_ACCURACY for c1, c2 in zip(self, other)])
+        else:
+            return False
+
+    def __gt__(self, other):
+        if isinstance(other, Point):
+            return Vector(NEGATIVE_UTOPIA, self).length > Vector(NEGATIVE_UTOPIA, other).length
+        else:
+            raise NotImplementedError
+
+    def __iter__(self):
+        return iter([self.x, self.y, self.z])
+
+    def __repr__(self):
+        return "Point({},{},{})".format(
+            *self
+        )
+
+
+NEGATIVE_UTOPIA = Point(-INFINITY, -INFINITY, -INFINITY)
+
+
+class Vector(metaclass=Immutable):
     def __init__(self, start, end):
         self.start = start
         self.end = end
 
+        self.components = self._calculate_components()
+
+    def _calculate_components(self):
+        return (
+            self.end.x - self.start.x,
+            self.end.y - self.start.y,
+            self.end.z - self.start.z,
+        )
+
+    def __neg__(self):
+        return Vector(self.end, self.start)
+
     @property
     def length(self):
-        dx = self.end.x - self.start.x
-        dy = subtract_or_return_zero(self.end.y, self.start.y)
-        dz = subtract_or_return_zero(self.end.z, self.start.z)
-        return (dx**2 + dy**2 + dz**2)**.5
+        return sum([c**2 for c in self.components])**.5
 
     def __iter__(self):
         return [self.start, self.end].__iter__()
+
+    def __eq__(self, other):
+        if isinstance(other, Vector):
+            return self.start == other.start and self.end == other.end
+
+
+class FreeVector(Vector):
+    def __init__(self, point):
+        Vector.__init__(self, Point(), point)
 
 
 class BoundaryBox:
@@ -34,12 +126,7 @@ class BoundaryBox:
 
     @property
     def dimensions(self):
-        used = self.directions
-        return tuple(map(lambda i: self._calculate_dimension(i) if i in used else None, range(len(self.min))))
-
-    @property
-    def directions(self):
-        return [i for i, (_min, _max) in enumerate(zip(self.min, self.max)) if None not in [_min, _max]]
+        return tuple(map(self._calculate_dimension, range(len(self.min))))
 
     def _calculate_dimension(self, direction):
         return self.max[direction] - self.min[direction]
@@ -51,22 +138,4 @@ class BoundaryBox:
 
 
 def calculate_extreme_coordinates(points):
-
-    def extreme_or_nones(coordinates):
-        return [None, None] if None in coordinates else (min(coordinates), max(coordinates))
-
-    def extract_coordinates(extractor):
-        return [extractor(node) for node in points]
-
-    def create_extractor(coord_name):
-        return lambda node: getattr(node, coord_name)
-
-    return tuple(
-        zip(*[
-            extreme_or_nones(
-                extract_coordinates(
-                    create_extractor(coord_name)
-                )
-            ) for coord_name in ['x', 'y', 'z']
-            ])
-    )
+    return tuple(zip(*[(min(coords), max(coords)) for coords in zip(*map(list, points))]))
