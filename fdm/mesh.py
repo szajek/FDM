@@ -43,21 +43,16 @@ class Mesh(metaclass=Immutable):
     def distribute_to_points(self, point, value):
         pos = self._position_by_point(point)
         idx = int(pos)
+        modulo = math.fmod(pos, 1.)
+
         n1 = self.all_nodes[idx]
-        if idx == len(self.all_nodes) - 1:
-            _w1, _w2 = 1., 0.
+
+        if modulo < NODE_TOLERANCE:
+            return {n1: 1.}
         else:
-            n2 = self.all_nodes[idx+1]
-
-            modulo = math.fmod(pos, 1.)
+            n2 = self.all_nodes[idx + 1]
             _w1, _w2 = (1. - modulo), modulo
-
-        w = {}
-        if _w1 > NODE_TOLERANCE:
-            w[n1] = _w1 * value
-        if _w2 > NODE_TOLERANCE:
-            w[n2] = _w2 * value
-        return w
+            return {n1: _w1*value, n2: _w2*value}
 
     @property
     def boundary_box(self):

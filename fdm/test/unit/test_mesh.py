@@ -3,6 +3,7 @@ import unittest
 from fdm.mesh import Mesh1DBuilder, Mesh
 from fdm.geometry import Point
 
+
 class MeshTest(unittest.TestCase):
     def test_PositionByPoint_AddressesAgree_ReturnGridAddress(self):
         grid = self._create_3node_grid()
