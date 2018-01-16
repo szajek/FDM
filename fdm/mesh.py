@@ -1,11 +1,10 @@
 import math
-from functools import partial, lru_cache
-from operator import is_not
+from functools import lru_cache
 
 import numpy as np
 
-from fdm.utils import Immutable
-from .geometry import Point, Vector, BoundaryBox
+from .utils import Immutable
+from .geometry import Point, BoundaryBox
 
 __all__ = ['Mesh', 'Mesh1DBuilder', ]
 
@@ -48,7 +47,7 @@ class Mesh(metaclass=Immutable):
         n1 = self.all_nodes[idx]
 
         if modulo < NODE_TOLERANCE:
-            return {n1: 1.}
+            return {n1: value}
         else:
             n2 = self.all_nodes[idx + 1]
             _w1, _w2 = (1. - modulo), modulo
