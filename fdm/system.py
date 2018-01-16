@@ -105,6 +105,9 @@ def _solve(solver, model):
     )
 
 
+AnalysisResults = collections.namedtuple("Results", ('displacement',))
+
+
 def create_linear_system_of_equations_solver():
     def _solve(A, b):
         return np.linalg.solve(A, b[np.newaxis].T)
@@ -121,10 +124,12 @@ def create_eigenproblem_solver():
 
 
 _solvers = {
-    'linear_system_of_equations': create_linear_system_of_equations_solver(),
-    'eigenproblem': create_eigenproblem_solver(),
+    'linear_system_of_equations': (create_linear_system_of_equations_solver(), AnalysisResults),
+    'eigenproblem': (create_eigenproblem_solver(), AnalysisResults),
 }
 
 
 def solve(solver, *args, **kwargs):
-    return _solve(_solvers[solver], *args, **kwargs)
+    solver, result_wrapper = _solvers[solver]
+    return result_wrapper(_solve(solver, *args, **kwargs))
+

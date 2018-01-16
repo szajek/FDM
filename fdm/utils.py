@@ -15,3 +15,16 @@ class Immutable(type):
         new_class.__init__ = wrapper
 
         return new_class
+
+
+def create_cached_factory(factory, id_builder):
+    cache = {}
+
+    def create(point):
+        _id = id_builder(point)
+        return cache.get(_id) or cache.setdefault(
+            _id,
+            factory(point)
+        )
+
+    return create

@@ -38,15 +38,15 @@ def _create_bc_by_equation(operator, free_value=0.):
     )
 
 
-class VirtualNodeStrategy(enum.Enum):
+class VirtualBoundaryStrategy(enum.Enum):
     AS_AT_BORDER = 0
     SYMMETRY = 1
 
 
 def _create_virtual_nodes_bc(x, strategy):
     m = {
-        VirtualNodeStrategy.SYMMETRY: 2.,
-        VirtualNodeStrategy.AS_AT_BORDER: 1.,
+        VirtualBoundaryStrategy.SYMMETRY: 2.,
+        VirtualBoundaryStrategy.AS_AT_BORDER: 1.,
     }[strategy]
     return LinearEquationTemplate(
             Stencil(
