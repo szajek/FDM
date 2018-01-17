@@ -43,9 +43,9 @@ class ModelToEquationsTest(unittest.TestCase):
         equations = model_to_equations(model)
 
         expected_coefficients = [
-            Scheme({0: 0}),
-            Scheme({1: 1}),
-            Scheme({2: 2}),
+            Scheme({Point(0): 0}),
+            Scheme({Point(1): 1}),
+            Scheme({Point(2): 2}),
         ]
 
         for equation_number in range(0, 3):

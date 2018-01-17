@@ -108,7 +108,7 @@ class SchemeTest(unittest.TestCase):
 
     def test_Create_PointsAsIntegersOfFloat_ConvertToPoints(self):
 
-        scheme = Scheme({1: 1., 2.: 1.})
+        scheme = Scheme({Point(1): 1., Point(2.): 1.})
 
         result = set(scheme._weights.keys())
 
@@ -176,11 +176,11 @@ class SchemeTest(unittest.TestCase):
 
     def test_Shift_Always_TranslatePoints(self):
 
-        scheme = Scheme({0: 1., 3.: -3})
+        scheme = Scheme({Point(0): 1., Point(3.): -3})
 
         result = scheme.shift(FreeVector(Point(-1.)))
 
-        expected = Scheme({-1: 1., 2.: -3})
+        expected = Scheme({Point(-1): 1., Point(2.): -3})
 
         self.assertEquals(result, expected)
 
@@ -227,20 +227,9 @@ class SchemeTest(unittest.TestCase):
 
         self.assertEqual(expected, result)
 
-    def test_Iter_Always_IterateThroughSortedKeys(self):
-        coords = [9, -5, 4, -6]
-        points = [Point(v) for v in coords]
-        s = Scheme({p: 1 for p in points})
-
-        result = [k for k in s]
-
-        expected = [Point(v) for v in sorted(coords)]
-
-        self.assertEqual(expected, result)
-
     def test_Start_Always_ReturnPointTheClosestToNegativeUtopia(self):
 
-        scheme = Scheme({-3.: 1., -5.: 0.})
+        scheme = Scheme({Point(-3.): 1., Point(-5.): 0.})
 
         result = scheme.start
 
@@ -249,7 +238,7 @@ class SchemeTest(unittest.TestCase):
         self.assertEqual(expected, result)
 
     def test_End_Always_ReturnPointTheFarthestPointFromNegativeUtopia(self):
-        scheme = Scheme({-3.: 1., -2.: 0.})
+        scheme = Scheme({Point(-3.): 1., Point(-2.): 0.})
 
         result = scheme.end
 
@@ -259,7 +248,7 @@ class SchemeTest(unittest.TestCase):
 
     def test_ToValue_Always_ReturnValueCalculatedBasedOnOutput(self):
 
-        scheme = Scheme({1: 1.3, 2: 2.3})
+        scheme = Scheme({Point(1): 1.3, Point(2): 2.3})
         output = {Point(1): 2.1, Point(2): 1.1}
 
         result = scheme.to_value(output)
@@ -357,8 +346,8 @@ class OperateTest(unittest.TestCase):
         self.assertEqual(scheme, result)
 
     def test_Call_WithEmptySchemeOrElement_RaiseAttributeError(self):
-        scheme = Scheme({1: 1})
-        element = Stencil({1: 1})
+        scheme = Scheme({Point(1): 1})
+        element = Stencil({Point(1): 1})
 
         with self.assertRaises(AttributeError):
             operate(Scheme({}), element)
@@ -380,18 +369,18 @@ class OperateTest(unittest.TestCase):
         self.assertEqual(expected, result)
 
     def test_Call_WithSchemeVariedByNodeAddress_ReturnRevolvedScheme(self):
-        scheme = Scheme({1: 2, 2: 4})
+        scheme = Scheme({Point(1): 2, Point(2): 4})
 
         element = MagicMock(
             expand=lambda point: {
-                Point(1): Scheme({0: 1., 6.: 3.}),
-                Point(2): Scheme({0: 1., 5.: 2.}),
+                Point(1): Scheme({Point(0): 1., Point(6.): 3.}),
+                Point(2): Scheme({Point(0): 1., Point(5.): 2.}),
             }[point]
         )
 
         result = operate(scheme, element)
 
-        expected = Scheme({0: 1. * 2 + 1. * 4., 5.: 2. * 4., 6: 3. * 2.})
+        expected = Scheme({Point(0): 1. * 2 + 1. * 4., Point(5.): 2. * 4., Point(6): 3. * 2.})
 
         self.assertEqual(expected, result)
 
@@ -462,7 +451,7 @@ class ElementTest(unittest.TestCase):
 
         result = operator.to_stencil(Point(0.))
 
-        expected = Stencil({-1.: 1., 0.: -2., 1.: 1.})
+        expected = Stencil({Point(-1.): 1., Point(0.): -2., Point(1.): 1.})
 
         self.assertEqual(expected, result)
 
@@ -474,7 +463,7 @@ class ElementTest(unittest.TestCase):
 
         result = operator.to_stencil(Point(2.))
 
-        expected = Stencil({-1.: 1., 0.: -2., 1.: 1.})
+        expected = Stencil({Point(-1.): 1., Point(0.): -2., Point(1.): 1.})
 
         self.assertEqual(expected, result)
 
@@ -496,7 +485,7 @@ class StencilTest(unittest.TestCase):
         resolution = 3.
 
         _stencil = Stencil.uniform(point_1, point_2, resolution, lambda *args: None)
-        result = list(sorted(point for point in _stencil._weights))
+        result = list(sorted([point for point in _stencil._weights], key=lambda item: item.x))
 
         _delta = Vector(point_1, point_2).length / resolution
         expected_node_addresses = [point_1 + FreeVector(Point(_delta * i)) for i in range(4)]
@@ -508,7 +497,7 @@ class StencilTest(unittest.TestCase):
         _scheme = Stencil.central(1.)
         result = _scheme._weights
 
-        _scheme = Stencil({-0.5: -1., 0.5: 1.})
+        _scheme = Stencil({Point(-0.5): -1., Point(0.5): 1.})
         expected = _scheme._weights
 
         self.assertTrue(self._compare_dict(expected, result))
@@ -518,7 +507,7 @@ class StencilTest(unittest.TestCase):
         _scheme = Stencil.central(2.)
         result = _scheme._weights
 
-        _scheme = Stencil({-1.: -0.5, 1.: 0.5})
+        _scheme = Stencil({Point(-1.): -0.5, Point(1.): 0.5})
         expected = _scheme._weights
 
         self.assertTrue(self._compare_dict(expected, result,))
@@ -671,7 +660,7 @@ class OperatorTest(unittest.TestCase):
 
     def test_Expand_NoElement_ReturnStencilSchemeShiftedToNodeAddress(self):
 
-        stencil_weights = {-1: 1., 1: 1.}
+        stencil_weights = {Point(-1): 1., Point(1): 1.}
         stencil = Stencil(stencil_weights)
         operator = Operator(stencil, element=None)
 
@@ -682,16 +671,16 @@ class OperatorTest(unittest.TestCase):
         self.assertEqual(expected, result)
 
     def test_Expand_ElementAsDispatcher_UseDynamicElementByLocal(self):
-        stencil = Stencil({-2: 1, -1: 1, 1: 3, 2: 1})
+        stencil = Stencil({Point(-2): 1, Point(-1): 1, Point(1): 3, Point(2): 1})
 
         element_start = MagicMock(
-            expand=MagicMock(return_value=Scheme({-10: 1.}))
+            expand=MagicMock(return_value=Scheme({Point(-10): 1.}))
         )
         element_center = MagicMock(
-            expand=MagicMock(return_value=Scheme({0: 2.}))
+            expand=MagicMock(return_value=Scheme({Point(0): 2.}))
         )
         element_end = MagicMock(
-            expand=MagicMock(return_value=Scheme({10: 3.}))
+            expand=MagicMock(return_value=Scheme({Point(10): 3.}))
         )
 
         def dispatcher(start, end, position):
@@ -704,7 +693,7 @@ class OperatorTest(unittest.TestCase):
 
         result = dispatcher.expand(Point(3))
 
-        expected = Scheme({-10: 1., 0: 2.*1. + 2.*3., 10: 3.})
+        expected = Scheme({Point(-10): 1., Point(0): 2.*1. + 2.*3., Point(10): 3.})
 
         self.assertEqual(expected, result)
 

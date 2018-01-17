@@ -16,7 +16,7 @@ class Mesh(metaclass=Immutable):
     def __init__(self, nodes, virtual_nodes=()):
         self.nodes = tuple(nodes)
         self.virtual_nodes = tuple(virtual_nodes)
-        self.all_nodes = list(sorted(self.nodes + self.virtual_nodes))
+        self.all_nodes = list(sorted(self.nodes + self.virtual_nodes, key=lambda item: item.x))
 
         self._grid_points = np.array([node.x for node in self.all_nodes])
 

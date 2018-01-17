@@ -32,34 +32,24 @@ class MutateMixin:
 
 
 def merge_weights(*weights):
-    def merge(weights_1, weights_2):
-        return {node_address: weights_1.get(node_address, 0.) + weights_2.get(node_address, 0.)
-                for node_address in set(weights_1.keys()) | set(weights_2.keys())}
 
-    return functools.reduce(merge, weights) if weights else {}
+    merged = collections.defaultdict(int)
 
+    for w in weights:
+        for point, factor in w.items():
+            merged[point] += factor
 
-def unify_weights(weights):
-    def unify(item):
-        if isinstance(item, Point):
-            return item
-        elif isinstance(item, (int, float)):
-            return Point(item)
-        else:
-            raise NotImplementedError
-    return {unify(key): value for key, value in weights.items()}
+    return merged
 
 
-class Scheme(collections.Mapping, MutateMixin):
+class Scheme(collections.Mapping):
     __slots__ = '_weights'
 
     def __init__(self, weights):
-        self._weights = unify_weights(weights)
-
-        MutateMixin.__init__(self, ('weights', '_weights'))
+        self._weights = weights
 
     def __iter__(self):
-        return iter(sorted(self._weights))
+        return iter(self._weights)
 
     def __len__(self):
         return len(self._weights)
@@ -74,7 +64,7 @@ class Scheme(collections.Mapping, MutateMixin):
         if other is None:
             return self.duplicate()
         elif isinstance(other, Scheme):
-            return self.mutate(weights=merge_weights(self._weights, other._weights))
+            return Scheme(merge_weights(self._weights, other._weights))
         elif isinstance(other, Point):
             return self.shift(FreeVector(other))
         elif isinstance(other, FreeVector):
@@ -89,14 +79,12 @@ class Scheme(collections.Mapping, MutateMixin):
         return self.__add__(other)
 
     def shift(self, vector):
-        return self.mutate(
-            weights={point + vector: weight for point, weight in self._weights.items()}
-        )
+        return Scheme({point + vector: weight for point, weight in self._weights.items()})
 
     def __mul__(self, other):
 
         if isinstance(other, (int, float, np.float64)):
-            return self.mutate(weights={point: e * other for point, e in self._weights.items()})
+            return Scheme({point: e * other for point, e in self._weights.items()})
         else:
             raise NotImplementedError
 
@@ -109,7 +97,7 @@ class Scheme(collections.Mapping, MutateMixin):
     def __pow__(self, other):
 
         if isinstance(other, (int, float)):
-            return self.mutate(weights={point: e ** other for point, e in self._weights.items()})
+            return Scheme({point: e ** other for point, e in self._weights.items()})
         else:
             raise NotImplementedError
 
@@ -124,15 +112,18 @@ class Scheme(collections.Mapping, MutateMixin):
             name=self.__class__.__name__, data=self._weights)
 
     def duplicate(self):
-        return self.mutate()
+        return Scheme(self._weights)
 
     @property
     def start(self):
-        return min(self._weights.keys())
+        return self._get_sorted_points()[0]
 
     @property
     def end(self):
-        return max(self._weights.keys())
+        return self._get_sorted_points()[-1]
+
+    def _get_sorted_points(self):
+        return sorted(self._weights.keys(), key=lambda item: item.x)
 
     @classmethod
     def from_number(cls, point, value):
@@ -282,7 +273,9 @@ class LazyOperation(Element):
                self._element_2 == other._element_2
 
 
-class Stencil(Element, MutateMixin):
+class Stencil(Element):
+    __slots__ = '_weights'
+
     @classmethod
     def forward(cls, span=1.):
         return cls.by_two_points(Point(0.), Point(span))
@@ -316,15 +309,13 @@ class Stencil(Element, MutateMixin):
         return Stencil(scheme._weights)
 
     def __init__(self, weights):
-        self._weights = unify_weights(weights)
-
-        MutateMixin.__init__(self, ('weights', '_weights'))
+        self._weights = weights
 
     def expand(self, point):
         return Scheme(self._weights) + point
 
     def scale(self, multiplier):
-        return self.mutate(weights={point * multiplier: value for point, value in self._weights.items()})
+        return Stencil({point * multiplier: value for point, value in self._weights.items()})
 
     def __repr__(self):
         return "{name}: {data}".format(
@@ -350,11 +341,11 @@ class Operator(Element):
         )
 
     def _dispatch(self, reference, operator_scheme):
-        def build_child_operator(address):
+        def build_child_operator(point):
             return self._element(
                 operator_scheme.start - FreeVector(reference),
                 operator_scheme.end - FreeVector(reference),
-                address - FreeVector(reference),
+                point - FreeVector(reference),
             )
 
         return DynamicElement(build_child_operator)

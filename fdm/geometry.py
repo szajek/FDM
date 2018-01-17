@@ -8,14 +8,27 @@ COORDS_EQ_ACCURACY = 1e-8
 INFINITY = 9e9
 
 
-@functools.total_ordering
-class Point(metaclass=Immutable):
+def calculate_length(components):
+    return sum([c ** 2 for c in components]) ** .5
+
+
+def calculate_points_delta(point_1, point_2):
+    return tuple(c_1 - c_2 for c_1, c_2 in zip(point_1, point_2))
+
+
+def calculate_distance(start, end):
+    return calculate_length(calculate_points_delta(start, end))
+
+
+class Point:
+    __slots__ = 'x', 'y', 'z', '_hash'
+
     def __init__(self, x=0., y=0., z=0.):
         self.x = x
         self.y = y
         self.z = z
 
-        self._hash = self._create_hash()
+        self._hash = None
 
     def translate(self, vector):
         return Point(*(c + d for c, d in zip(self, vector.components)))
@@ -51,6 +64,8 @@ class Point(metaclass=Immutable):
         return Point(*(-c for c in self))
 
     def __hash__(self):
+        if self._hash is None:
+            self._hash = self._create_hash()
         return self._hash
 
     def _create_hash(self):
@@ -67,12 +82,6 @@ class Point(metaclass=Immutable):
         else:
             return False
 
-    def __gt__(self, other):
-        if isinstance(other, Point):
-            return Vector(NEGATIVE_UTOPIA, self).length > Vector(NEGATIVE_UTOPIA, other).length
-        else:
-            raise NotImplementedError
-
     def __iter__(self):
         return iter([self.x, self.y, self.z])
 
@@ -82,29 +91,30 @@ class Point(metaclass=Immutable):
         )
 
 
-NEGATIVE_UTOPIA = Point(-INFINITY, -INFINITY, -INFINITY)
+class Vector:
+    __slots__ = 'start', 'end', '_components'
 
-
-class Vector(metaclass=Immutable):
     def __init__(self, start, end):
         self.start = start
         self.end = end
 
-        self.components = self._calculate_components()
+        self._components = None
 
     def _calculate_components(self):
-        return (
-            self.end.x - self.start.x,
-            self.end.y - self.start.y,
-            self.end.z - self.start.z,
-        )
+        return calculate_points_delta(self.end, self.start)
 
     def __neg__(self):
         return Vector(self.end, self.start)
 
     @property
+    def components(self):
+        if self._components is None:
+            self._components = self._calculate_components()
+        return self._components
+
+    @property
     def length(self):
-        return sum([c**2 for c in self.components])**.5
+        return calculate_length(self.components)
 
     def __iter__(self):
         return [self.start, self.end].__iter__()
@@ -112,6 +122,10 @@ class Vector(metaclass=Immutable):
     def __eq__(self, other):
         if isinstance(other, Vector):
             return self.start == other.start and self.end == other.end
+
+
+NEGATIVE_UTOPIA_COORDINATES = -INFINITY, -INFINITY, -INFINITY
+NEGATIVE_UTOPIA = Point(*NEGATIVE_UTOPIA_COORDINATES)
 
 
 class FreeVector(Vector):

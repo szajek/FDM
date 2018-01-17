@@ -16,7 +16,7 @@ Model = collections.namedtuple("Model", ('equation', 'mesh', 'bcs'))
 def _create_dirichlet_bc(value=0.):
     return LinearEquationTemplate(
         operator=Operator(
-            Stencil({0: 1.})
+            Stencil({Point(0): 1.})
         ),
         free_value=lambda node_address: value,
     )
@@ -51,8 +51,8 @@ def _create_virtual_nodes_bc(x, strategy):
     return LinearEquationTemplate(
             Stencil(
                 {
-                    0.: 1.,
-                    -np.sign(x)*m*abs(x): -1.
+                    Point(0.): 1.,
+                    Point(-np.sign(x)*m*abs(x)): -1.
                 }
             ),
             lambda p: 0.

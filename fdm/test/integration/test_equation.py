@@ -15,7 +15,7 @@ class OperatorTest(unittest.TestCase):
 
         result = linear_operator.expand(Point(0))
 
-        expected = Scheme({-1: -0.5, 1: 0.5}) * value
+        expected = Scheme({Point(-1): -0.5, Point(1): 0.5}) * value
 
         self.assertEqual(expected, result)
 
@@ -29,7 +29,7 @@ class OperatorTest(unittest.TestCase):
 
         result = linear_operator.expand(Point(3))
 
-        expected = Scheme({2: -0.5, 4: 0.5}) * value
+        expected = Scheme({Point(2): -0.5, Point(4): 0.5}) * value
 
         self.assertEqual(expected, result)
 
@@ -70,7 +70,7 @@ class OperatorTest(unittest.TestCase):
 
         result = linear_operator.expand(Point(3))
 
-        expected = Scheme({2: 1., 3: -2., 4: 1.}) * value
+        expected = Scheme({Point(2): 1., Point(3): -2., Point(4): 1.}) * value
 
         self.assertEqual(expected, result)
 
@@ -81,13 +81,13 @@ class LazyOperationTest(unittest.TestCase):
         w1 = 9.99995772128789e-06
         w2 = 0.99999577213334
 
-        s1 = Stencil({-0.5: w1, 0.0: w2})
-        s2 = Stencil({-0.5: w1, 0.0: w2})
+        s1 = Stencil({Point(-0.5): w1, Point(0.0): w2})
+        s2 = Stencil({Point(-0.5): w1, Point(0.0): w2})
 
         s = LazyOperation.summation(s1, s2)
 
         result = s.expand(Point(0))
 
-        expected = Scheme({-0.5: w1*2, 0.0: w2*2})
+        expected = Scheme({Point(-0.5): w1*2, Point(0.0): w2*2})
 
         self.assertEqual(expected, result)

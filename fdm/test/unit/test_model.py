@@ -2,6 +2,7 @@ import unittest
 
 from fdm import Stencil
 from fdm.model import _create_virtual_nodes_bc, VirtualBoundaryStrategy
+from fdm.geometry import Point
 
 
 class CreateVirtualNodesBCTest(unittest.TestCase):
@@ -11,7 +12,7 @@ class CreateVirtualNodesBCTest(unittest.TestCase):
 
         result = _create_virtual_nodes_bc(x, VirtualBoundaryStrategy.SYMMETRY).operator
 
-        expected = Stencil({0.: 1., 0.4: -1.})
+        expected = Stencil({Point(0.): 1., Point(0.4): -1.})
 
         self.assertEqual(expected, result)
 
@@ -21,7 +22,7 @@ class CreateVirtualNodesBCTest(unittest.TestCase):
 
         result = _create_virtual_nodes_bc(x, VirtualBoundaryStrategy.SYMMETRY).operator
 
-        expected = Stencil({0.: 1., -0.4: -1.})
+        expected = Stencil({Point(0.): 1., Point(-0.4): -1.})
 
         self.assertEqual(expected, result)
 

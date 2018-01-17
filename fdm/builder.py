@@ -63,8 +63,8 @@ def create_virtual_boundary_based_on_second_derivative(length, span, boundaries)
     def bc_virtual_nodes_builder(side, boundary):
         _type, opts = boundary
         if _type == BoundaryType.FIXED:
-            weights = {0 * span: -1., 1 * span: 3., 2 * span: -3., 3 * span: 1.} if side == Side.LEFT \
-                else {-3 * span: 1., -2 * span: -3., -1 * span: 3., 0 * span: -1.}
+            weights = {Point(0) * span: -1., Point(1 * span): 3., Point(2 * span): -3., Point(3 * span): 1.} if side == Side.LEFT \
+                else {Point(-3 * span): 1., Point(-2 * span): -3., Point(-1 * span): 3., Point(0 * span): -1.}
             return fdm.LinearEquationTemplate(
                 operator=fdm.Operator(fdm.Stencil(weights)),
                 free_value=lambda a: 0.
