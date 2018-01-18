@@ -1,7 +1,4 @@
-import functools
-
-from fdm.utils import Immutable
-
+import numpy as np
 
 COORDS_HASH_ACCURACY = 7
 COORDS_EQ_ACCURACY = 1e-8
@@ -31,7 +28,8 @@ class Point:
         self._hash = None
 
     def translate(self, vector):
-        return Point(*(c + d for c, d in zip(self, vector.components)))
+        dx, dy, dz = vector.components
+        return Point(self.x + dx, self.y + dy, self.z + dz)
 
     def __add__(self, other):
         if isinstance(other, Vector):

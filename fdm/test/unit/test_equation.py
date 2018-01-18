@@ -257,17 +257,18 @@ class SchemeTest(unittest.TestCase):
 
         self.assertEqual(expected, result)
 
-    def test_ToMesh_Always_ReturnSchemeWithPointsInNodesAndDistributedWeights(self):
+    def test_Distribute_Always_ReturnSchemeWithPointsInNodesAndDistributedWeights(self):
         scheme = Scheme({Point(.5): 1., Point(1.5): 2.})
-        mesh = Mesh(
-            [
-                Point(0.),
-                Point(1.),
-                Point(2.),
-            ]
-        )
 
-        result = scheme.to_mesh(mesh)
+        def distributor(point, value):
+            if point == Point(.5):
+                return {Point(0.): 0.5 * value, Point(1.): 0.5 * value}
+            elif point == Point(1.5):
+                return {Point(1.): 0.5 * value, Point(2.): 0.5 * value}
+            else:
+                raise NotImplementedError
+
+        result = scheme.distribute(distributor)
 
         expected = Scheme({
             Point(0.): 0.5,

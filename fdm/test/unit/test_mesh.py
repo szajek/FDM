@@ -1,72 +1,104 @@
 import unittest
 
-from fdm.mesh import Mesh1DBuilder, Mesh
+from fdm.mesh import Mesh1DBuilder, create_weights_distributor, IndexedPoints
 from fdm.geometry import Point
 
 
 class MeshTest(unittest.TestCase):
-    def test_PositionByPoint_AddressesAgree_ReturnGridAddress(self):
-        grid = self._create_3node_grid()
+    pass
 
-        result = grid._position_by_point(Point(1.))
+
+class IndexedPointsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls._3_node = [Point(0.), Point(1.), Point(3.),]
+
+    def test_FindIndex_PointsAgree_ReturnGridIndex(self):
+        point = Point(1.)
+        indexed_points = self._create(self._3_node, [point, Point(2.5)])
+
+        result = indexed_points.get_index(point)
 
         expected = 1
 
         self.assertEqual(expected, result)
 
-    def test_PositionByPoint_AddressNotAgree_ReturnGridAddress(self):
-        grid = self._create_3node_grid()
+    def test_Call_PointInHalfDistance_ReturnGridIndex(self):
+        point = Point(2.)
+        indexed_points = self._create(self._3_node, [point])
 
-        result = grid._position_by_point(Point(2.))
+        result = indexed_points.get_index(point)
 
         expected = 1.5
 
         self.assertAlmostEqual(expected, result)
 
-    def test_DistributeToPoints_CoincidentWithNode_ReturnDictWithValues(self):
+    def test_Call_PointCloserToTheLeftNode_ReturnGridIndex(self):
+        point = Point(1.5)
+        indexed_points = self._create(self._3_node, [point, Point(2.5)])
 
-        points = p1, p2 = Point(1.), Point(2.)
+        result = indexed_points.get_index(point)
 
-        grid = self._create(points)
+        expected = 1.25
 
-        result = grid.distribute_to_points(p1, 1.)
+        self.assertAlmostEqual(expected, result)
+
+    def test_Call_PointCloserToTheRightNode_ReturnGridIndex(self):
+        point = Point(2.5)
+        indexed_points = self._create(self._3_node, [point])
+
+        result = indexed_points.get_index(point)
+
+        expected = 1.75
+
+        self.assertAlmostEqual(expected, result)
+
+    def _create(self, *args, **kwargs):
+        return IndexedPoints(*args, **kwargs)
+
+
+class WeightDistributorTest(unittest.TestCase):
+
+    def test_Distribute_CoincidentWithNode_ReturnDictWithValues(self):
+        points = p1, p2 = [Point(0.), Point(1.)]
+        indexed_points = IndexedPoints(points, [p1])
+
+        distributor = self._create(indexed_points)
+
+        result = distributor(p1, 1.)
 
         expected = {p1: 1.}
 
         self.assertEqual(expected, result)
 
-    def test_DistributeToPoints_BetweenNodes_ReturnDictWithValues(self):
+    def test_Distribute_BetweenNodes_ReturnDictWithValues(self):
         points = p1, p2 = Point(1.), Point(2.)
+        middle_point = Point(1.2)
+        indexed_points = IndexedPoints(points, [middle_point])
 
-        grid = self._create(points)
+        distributor = self._create(indexed_points)
 
-        result = grid.distribute_to_points(Point(1.2), 1.)
+        result = distributor(middle_point, 1.)
 
         expected = {p1: .8, p2: 0.2}
 
         self.assertTrue(expected.keys() == result.keys())
         self.assertTrue([(expected[k] - result[k]) < 1e-6 for k in expected.keys()])
 
-    def test_DistributeToPoints_LastNode_ReturnDictWithValues(self):
+    def test_Distribute_LastNode_ReturnDictWithValues(self):
         points = p1, p2 = Point(1.), Point(2.)
+        indexed_points = IndexedPoints(points, [p2])
 
-        grid = self._create(points)
+        distributor = self._create(indexed_points)
 
-        result = grid.distribute_to_points(p2, 1.)
+        result = distributor(p2, 1.)
 
         expected = {p2: 1.}
 
         self.assertEqual(expected, result)
 
-    def _create_3node_grid(self):
-        return Mesh([
-            Point(0.),
-            Point(1.),
-            Point(3.),
-        ])
-
-    def _create(self, real_nodes, virtual_nodes=()):
-        return Mesh(real_nodes, virtual_nodes=virtual_nodes)
+    def _create(self, *args, **kwargs):
+        return create_weights_distributor(*args, **kwargs)
 
 
 class Mesh1DBuilderTest(unittest.TestCase):

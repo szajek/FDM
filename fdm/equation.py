@@ -43,10 +43,12 @@ def merge_weights(*weights):
 
 
 class Scheme(collections.Mapping):
-    __slots__ = '_weights'
+    __slots__ = '_weights', '_sorted_points'
 
     def __init__(self, weights):
         self._weights = weights
+
+        self._sorted_points = None
 
     def __iter__(self):
         return iter(self._weights)
@@ -123,7 +125,9 @@ class Scheme(collections.Mapping):
         return self._get_sorted_points()[-1]
 
     def _get_sorted_points(self):
-        return sorted(self._weights.keys(), key=lambda item: item.x)
+        if self._sorted_points is None:
+            self._sorted_points = sorted(self._weights.keys(), key=lambda item: item.x)
+        return self._sorted_points
 
     @classmethod
     def from_number(cls, point, value):
@@ -132,9 +136,9 @@ class Scheme(collections.Mapping):
     def to_value(self, output):
         return functools.reduce(lambda _sum, point: _sum + self._weights[point] * output[point], self._weights.keys(), 0.)
 
-    def to_mesh(self, mesh):
+    def distribute(self, distributor):
         return Scheme(
-            merge_weights(*[mesh.distribute_to_points(point, factor) for point, factor in self._weights.items()])
+            merge_weights(*[distributor(point, factor) for point, factor in self._weights.items()])
         )
 
 

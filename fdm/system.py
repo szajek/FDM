@@ -1,29 +1,51 @@
 import collections
+import itertools
 
 import numpy as np
 
 from fdm.equation import LinearEquation
+from fdm.mesh import create_weights_distributor, IndexedPoints
 
 np.set_printoptions(suppress=True, linewidth=500, threshold=np.nan)
-
 
 __all__ = ['solve']
 
 
-def model_to_equations(model):
-
+def create_free_node_equations(model):
     def from_template(point, template):
         template = model.bcs.get(point, template)
         assert template is not None, "No template found for: {}".format(point)
         return LinearEquation(
-                template.operator(point).to_mesh(model.mesh),
-                template.free_value(point)
-                )
+            template.operator(point),
+            template.free_value(point)
+        )
 
-    def generate_for(nodes, template=None):
+    def generate_for(nodes, template):
         return [from_template(node, template) for node in nodes]
 
-    return generate_for(model.mesh.nodes, model.equation) + generate_for(model.mesh.virtual_nodes)
+    return generate_for(model.mesh.nodes, model.equation) + generate_for(model.mesh.virtual_nodes, None)
+
+
+def convert_to_mesh_nodes_equations(nodes, equations):
+    all_free_points = list(set(itertools.chain(*[eq.scheme.keys() for eq in equations])))
+
+    distributor = create_weights_distributor(
+        IndexedPoints(nodes, all_free_points)
+    )
+
+    return [LinearEquation(
+                eq.scheme.distribute(distributor),
+                eq.free_value
+            )
+            for eq in equations
+            ]
+
+
+def model_to_equations(model):
+    return convert_to_mesh_nodes_equations(
+        model.mesh.all_nodes,
+        create_free_node_equations(model)
+    )
 
 
 class EquationWriter:
@@ -47,7 +69,6 @@ class EquationWriter:
 
 
 class Output(collections.Mapping):
-
     @property
     def real(self):
         return self._real_output
@@ -80,7 +101,6 @@ def create_variables(domain):
 
 
 def _solve(solver, model):
-
     def create_empty_arrays():
         return np.zeros((variables_number, variables_number)), np.zeros(variables_number)
 
@@ -111,6 +131,7 @@ AnalysisResults = collections.namedtuple("Results", ('displacement',))
 def create_linear_system_of_equations_solver():
     def _solve(A, b):
         return np.linalg.solve(A, b[np.newaxis].T)
+
     return _solve
 
 
@@ -120,6 +141,7 @@ def create_eigenproblem_solver():
         matrix = np.dot(A, np.linalg.inv(mass))
         eval, evect = np.linalg.eig(matrix)
         return evect[:, 0]
+
     return _solve
 
 
@@ -132,4 +154,3 @@ _solvers = {
 def solve(solver, *args, **kwargs):
     solver, result_wrapper = _solvers[solver]
     return result_wrapper(_solve(solver, *args, **kwargs))
-
