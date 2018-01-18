@@ -3,8 +3,9 @@ import itertools
 
 import numpy as np
 
-from fdm.equation import LinearEquation
-from fdm.mesh import create_weights_distributor, IndexedPoints
+from fdm.equation import LinearEquation, create_weights_distributor
+from fdm.mesh import create_weights_distributor
+from fdm.geometry import IndexedPoints
 
 np.set_printoptions(suppress=True, linewidth=500, threshold=np.nan)
 

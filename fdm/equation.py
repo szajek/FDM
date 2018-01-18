@@ -8,6 +8,7 @@ import numpy as np
 import dicttools
 
 from fdm.geometry import Point, FreeVector, Vector
+from fdm.mesh import NODE_TOLERANCE
 from fdm.utils import Immutable
 
 __all__ = ['Scheme', 'Element', 'Stencil', 'DynamicElement', 'LazyOperation', 'Operator', 'Number',
@@ -140,6 +141,27 @@ class Scheme(collections.Mapping):
         return Scheme(
             merge_weights(*[distributor(point, factor) for point, factor in self._weights.items()])
         )
+
+
+def create_weights_distributor(indexed_points):
+
+    def distribute(point, value):
+        pos = indexed_points.get_index(point)
+        idx = int(pos)
+        modulo = math.fmod(pos, 1.)
+
+        n1 = indexed_points.get_point(idx)
+
+        if modulo < NODE_TOLERANCE:
+            return {n1: value}
+        elif abs(1. - modulo) < NODE_TOLERANCE:
+            n2 = indexed_points.get_point(idx + 1)
+            return {n2: value}
+        else:
+            n2 = indexed_points.get_point(idx + 1)
+            _w1, _w2 = (1. - modulo), modulo
+            return {n1: _w1*value, n2: _w2*value}
+    return distribute
 
 
 def operate(scheme, element):
@@ -377,3 +399,4 @@ class Number(Element):
 
 LinearEquationTemplate = collections.namedtuple('LinearEquationTemplate', ('operator', 'free_value'))
 LinearEquation = collections.namedtuple('LinearEquation', ('scheme', 'free_value'))
+

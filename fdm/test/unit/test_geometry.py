@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from fdm.geometry import Point, Vector, calculate_extreme_coordinates, BoundaryBox, FreeVector
+from fdm.geometry import Point, Vector, calculate_extreme_coordinates, BoundaryBox, FreeVector, IndexedPoints
 
 
 class PointTest(unittest.TestCase):
@@ -126,3 +126,51 @@ class BoundaryBoxTest(unittest.TestCase):
 
         self.assertEqual(expected, result)
 
+
+class IndexedPointsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls._3_node = [Point(0.), Point(1.), Point(3.),]
+
+    def test_FindIndex_PointsAgree_ReturnGridIndex(self):
+        point = Point(1.)
+        indexed_points = self._create(self._3_node, [point, Point(2.5)])
+
+        result = indexed_points.get_index(point)
+
+        expected = 1
+
+        self.assertEqual(expected, result)
+
+    def test_Call_PointInHalfDistance_ReturnGridIndex(self):
+        point = Point(2.)
+        indexed_points = self._create(self._3_node, [point])
+
+        result = indexed_points.get_index(point)
+
+        expected = 1.5
+
+        self.assertAlmostEqual(expected, result)
+
+    def test_Call_PointCloserToTheLeftNode_ReturnGridIndex(self):
+        point = Point(1.5)
+        indexed_points = self._create(self._3_node, [point, Point(2.5)])
+
+        result = indexed_points.get_index(point)
+
+        expected = 1.25
+
+        self.assertAlmostEqual(expected, result)
+
+    def test_Call_PointCloserToTheRightNode_ReturnGridIndex(self):
+        point = Point(2.5)
+        indexed_points = self._create(self._3_node, [point])
+
+        result = indexed_points.get_index(point)
+
+        expected = 1.75
+
+        self.assertAlmostEqual(expected, result)
+
+    def _create(self, *args, **kwargs):
+        return IndexedPoints(*args, **kwargs)

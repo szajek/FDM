@@ -1,4 +1,7 @@
+import math
+
 import numpy as np
+import scipy.spatial
 
 COORDS_HASH_ACCURACY = 7
 COORDS_EQ_ACCURACY = 1e-8
@@ -151,3 +154,43 @@ class BoundaryBox:
 
 def calculate_extreme_coordinates(points):
     return tuple(zip(*[(min(coords), max(coords)) for coords in zip(*map(list, points))]))
+
+
+class IndexedPoints:
+    def __init__(self, base_points, points_to_look_for):
+        self._base_points = base_points
+        self._points_to_look_for = points_to_look_for
+
+        self._points_to_look_for_indices = dict(((point, i) for i, point in enumerate(points_to_look_for)))
+
+        self._base_points_array = np.array([list(point) for point in self._base_points])
+        self._look_for_points_array = np.array([list(point) for point in self._points_to_look_for])
+
+        self._find_points_indices()
+
+    def _find_points_indices(self):
+
+        ckd_tree = scipy.spatial.cKDTree(self._base_points_array)
+        distances, close_points_indexes = ckd_tree.query(self._look_for_points_array, k=2)
+
+        self._indices = [
+            self._find_point_index(i, close_points_indexes[i][0])
+            for i in range(len(self._points_to_look_for))
+        ]
+
+    def _find_point_index(self, i, the_closest_point):
+        x = self._look_for_points_array[i][0]
+        idx = the_closest_point
+
+        bind_with_left = idx == len(self._base_points_array) - 1 or x < self._base_points_array[idx][0]
+        i1, i2 = (idx - 1, idx) if bind_with_left else (idx, idx + 1)
+        d1, d2 = abs(self._base_points_array[[i1, i2], 0] - [x, x])
+
+        return i1 + (d1 / (d1 + d2))
+
+    def get_index(self, point):
+        return self._indices[self._points_to_look_for_indices[point]]
+
+    def get_point(self, index):
+        assert math.fmod(index, 1) == 0, "Point index must be integer"
+        return self._base_points[index]

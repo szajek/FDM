@@ -5,8 +5,8 @@ from mock import MagicMock, patch
 import numpy as np
 
 from fdm.equation import (LazyOperation, Operator, Stencil, DynamicElement, Scheme, Number, Element, \
-                          operate, merge_weights, MutateMixin)
-from fdm.geometry import FreeVector, Point, Vector
+                          operate, merge_weights, MutateMixin, create_weights_distributor)
+from fdm.geometry import FreeVector, Point, Vector, IndexedPoints
 from fdm.mesh import Mesh
 
 
@@ -726,3 +726,47 @@ class NumberTest(unittest.TestCase):
         expected = value
 
         self.assertEquals(expected, result)
+
+
+class WeightDistributorTest(unittest.TestCase):
+
+    def test_Distribute_CoincidentWithNode_ReturnDictWithValues(self):
+        points = p1, p2 = [Point(0.), Point(1.)]
+        indexed_points = IndexedPoints(points, [p1])
+
+        distributor = self._create(indexed_points)
+
+        result = distributor(p1, 1.)
+
+        expected = {p1: 1.}
+
+        self.assertEqual(expected, result)
+
+    def test_Distribute_BetweenNodes_ReturnDictWithValues(self):
+        points = p1, p2 = Point(1.), Point(2.)
+        middle_point = Point(1.2)
+        indexed_points = IndexedPoints(points, [middle_point])
+
+        distributor = self._create(indexed_points)
+
+        result = distributor(middle_point, 1.)
+
+        expected = {p1: .8, p2: 0.2}
+
+        self.assertTrue(expected.keys() == result.keys())
+        self.assertTrue([(expected[k] - result[k]) < 1e-6 for k in expected.keys()])
+
+    def test_Distribute_LastNode_ReturnDictWithValues(self):
+        points = p1, p2 = Point(1.), Point(2.)
+        indexed_points = IndexedPoints(points, [p2])
+
+        distributor = self._create(indexed_points)
+
+        result = distributor(p2, 1.)
+
+        expected = {p2: 1.}
+
+        self.assertEqual(expected, result)
+
+    def _create(self, *args, **kwargs):
+        return create_weights_distributor(*args, **kwargs)
