@@ -32,5 +32,5 @@ class Mesh1DBuilderTest(unittest.TestCase):
                 .add_uniformly_distributed_nodes(node_number)
                 .create()
         )
-        return mesh.nodes
+        return mesh.real_nodes
 

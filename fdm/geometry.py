@@ -23,6 +23,8 @@ def calculate_distance(start, end):
 class Point:
     __slots__ = 'x', 'y', 'z', '_hash'
 
+    _hash_pool = {}
+
     def __init__(self, x=0., y=0., z=0.):
         self.x = x
         self.y = y
@@ -66,7 +68,7 @@ class Point:
 
     def __hash__(self):
         if self._hash is None:
-            self._hash = self._create_hash()
+            self._hash = self._hash_pool.setdefault(tuple(self), self._create_hash())
         return self._hash
 
     def _create_hash(self):

@@ -5,7 +5,7 @@ from mock import MagicMock, patch
 import numpy as np
 
 from fdm.equation import (LazyOperation, Operator, Stencil, DynamicElement, Scheme, Number, Element, \
-                          operate, merge_weights, MutateMixin, create_weights_distributor)
+                          operate, merge_weights, MutateMixin, create_weights_distributor, Template)
 from fdm.geometry import FreeVector, Point, Vector, IndexedPoints
 from fdm.mesh import Mesh
 
@@ -770,3 +770,10 @@ class WeightDistributorTest(unittest.TestCase):
 
     def _create(self, *args, **kwargs):
         return create_weights_distributor(*args, **kwargs)
+
+
+#
+
+
+class TemplateTest(unittest.TestCase):
+    pass

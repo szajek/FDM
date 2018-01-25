@@ -3,16 +3,13 @@ import collections
 import enum
 import functools
 import math
-import numpy as np
 
-import dicttools
+import numpy as np
 
 from fdm.geometry import Point, FreeVector, Vector
 from fdm.mesh import NODE_TOLERANCE
-from fdm.utils import Immutable
 
-__all__ = ['Scheme', 'Element', 'Stencil', 'DynamicElement', 'LazyOperation', 'Operator', 'Number',
-           'LinearEquation', 'LinearEquationTemplate']
+__all__ = ['Scheme', 'Element', 'Stencil', 'DynamicElement', 'LazyOperation', 'Operator', 'Number', 'Template']
 
 
 class MutateMixin:
@@ -396,7 +393,21 @@ class Number(Element):
 
 #
 
+class Template(collections.Sequence):
+    def __init__(self, items):
+        self._items = items
 
-LinearEquationTemplate = collections.namedtuple('LinearEquationTemplate', ('operator', 'free_value'))
-LinearEquation = collections.namedtuple('LinearEquation', ('scheme', 'free_value'))
+    def expand(self, point):
+        return [item(point) for item in self._get_items(point)]
 
+    def _get_items(self, point):
+        return self._items(point) if callable(self._items) else self._items
+
+    def __len__(self):
+        return len(self._items)
+
+    def __getitem__(self, index):
+        return self._items[index]
+
+    def __iter__(self):
+        return iter(self._items)

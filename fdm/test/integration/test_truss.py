@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 
 import fdm.builder as builder
-from fdm.system import solve
+from fdm.analysis import solve, AnalysisType
 
 
 class TrussStaticEquationFiniteDifferencesTest(unittest.TestCase):
@@ -58,42 +58,50 @@ class TrussStaticEquationFiniteDifferencesTest(unittest.TestCase):
 
     def _create_predefined_builder(self):
         return (
-            builder.Truss1d(self._length, self._node_number)
+            builder.create(self._length, self._node_number)
+                .set_analysis_type('SYSTEM_OF_LINEAR_EQUATIONS')
                 .set_boundary(builder.Side.LEFT, builder.BoundaryType.FIXED)
                 .set_boundary(builder.Side.RIGHT, builder.BoundaryType.FREE)
                 .set_load(builder.LoadType.MASS)
         )
 
     def _solve(self, model):
-        return solve('linear_system_of_equations', model).displacement
+        return solve(AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS, model).displacement
 
 
 class TrussDynamicEigenproblemEquationFiniteDifferencesTest(unittest.TestCase):
     def setUp(self):
         self._length = 1.
-        self._node_number = 6
+        self._node_number = 31
 
-    @unittest.skip("Wrong BC applied")
     def test_ConstantSectionAndYoung_ReturnCorrectDisplacement(self):
 
         model = (
             self._create_predefined_builder()
-                .set_field(builder.FieldType.CONSTANT, m=2.)
         ).create()
 
-        result = self._solve(model)
+        result = self._solve(model).eigenvectors[0]
 
-        expected = np.array([0., -0.3717, -0.6015, -0.6015, -0.3717, 0.], )
+        # expected = np.array([0., -0.3717, -0.6015, -0.6015, -0.3717, 0.], )
+        expected = np.array([0., -0.026989, -0.053683, -0.079788, -0.105019, -0.129099, -0.151765, -0.172769, -0.191879, -0.208887,
+                  -0.223607, -0.235876, -0.245562, -0.252557, -0.256784, -0.258199, -0.256784, -0.252557, -0.245562,
+                  -0.235876, -0.223607, -0.208887, -0.191879, -0.172769, -0.151765, -0.129099, -0.105019, -0.079788,
+                  -0.053683, -0.026989, 0.])
 
         np.testing.assert_allclose(expected, result, atol=1e-4)
 
     def _create_predefined_builder(self):
         return (
-            builder.Truss1d(self._length, self._node_number)
+            builder.create(self._length, self._node_number)
+                .set_analysis_type('EIGENPROBLEM')
                 .set_boundary(builder.Side.LEFT, builder.BoundaryType.FIXED)
                 .set_boundary(builder.Side.RIGHT, builder.BoundaryType.FIXED)
                 .set_load(builder.LoadType.MASS)
+                # .add_virtual_nodes(1, 1)
+                # .set_virtual_boundary_strategy(model.VirtualBoundaryStrategy.SYMMETRY)
+                # .set_virtual_boundary_strategy('based_on_second_derivative')
+
         )
 
     def _solve(self, model):
-        return solve('eigenproblem', model).displacement
+        return solve(AnalysisType.EIGENPROBLEM, model)
