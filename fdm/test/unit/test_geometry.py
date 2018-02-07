@@ -2,7 +2,8 @@ import unittest
 
 import numpy as np
 
-from fdm.geometry import Point, Vector, calculate_extreme_coordinates, BoundaryBox, FreeVector, IndexedPoints
+from fdm.geometry import Point, Vector, calculate_extreme_coordinates, BoundaryBox, FreeVector, \
+    ClosePointsFinder, detect_dimension
 
 
 class PointTest(unittest.TestCase):
@@ -127,50 +128,94 @@ class BoundaryBoxTest(unittest.TestCase):
         self.assertEqual(expected, result)
 
 
-class IndexedPointsTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls._3_node = [Point(0.), Point(1.), Point(3.),]
+class DetectDimensionTest(unittest.TestCase):
+    def test_OnlyXNotZero_Always_ReturnOne(self):
+        points_array = np.array(
+            [
+                [1., 0., 0.],
+                [-1., 0., 0.],
+            ]
+        )
 
-    def test_FindIndex_PointsAgree_ReturnGridIndex(self):
-        point = Point(1.)
-        indexed_points = self._create(self._3_node, [point, Point(2.5)])
-
-        result = indexed_points.get_index(point)
+        result = detect_dimension(points_array)
 
         expected = 1
 
         self.assertEqual(expected, result)
 
-    def test_Call_PointInHalfDistance_ReturnGridIndex(self):
+    def test_OnlyXYNotZero_Always_ReturnTwo(self):
+        points_array = np.array(
+            [
+                [1., 0., 0.],
+                [-1., 1., 0.],
+            ]
+        )
+
+        result = detect_dimension(points_array)
+
+        expected = 2
+
+        self.assertEqual(expected, result)
+
+    def test_OnlyZ_Always_ReturnThree(self):
+        points_array = np.array(
+            [
+                [0., 0., 0.],
+                [0., 0., 1.],
+            ]
+        )
+
+        result = detect_dimension(points_array)
+
+        expected = 3
+
+        self.assertEqual(expected, result)
+
+
+class ClosePointsFinderForOneDimensionTest(unittest.TestCase):
+
+    def test_Call_PointsAgree_ReturnTheClosestPointsAndDistances(self):
+        points = p1, p2, p3 = [Point(0.), Point(1.), Point(3.), ]
+        finder = self._create(points, [p2, Point(2.5)])
+
+        result = finder(p2)
+
+        expected = {p1: 1., p2: 0.}
+
+        self.assertEqual(expected, result)
+
+    def test_Call_PointInHalfDistance_ReturnTheClosestPointsAndDistances(self):
+        points = p1, p2, p3 = [Point(0.), Point(1.), Point(3.), ]
         point = Point(2.)
-        indexed_points = self._create(self._3_node, [point])
+        finder = self._create(points, [point])
 
-        result = indexed_points.get_index(point)
+        result = finder(point)
 
-        expected = 1.5
+        expected = {p2: 1., p3: 1.}
 
-        self.assertAlmostEqual(expected, result)
+        self.assertEqual(expected, result)
 
-    def test_Call_PointCloserToTheLeftNode_ReturnGridIndex(self):
+    def test_Call_PointCloserToTheLeftNode_ReturnPointBetween(self):
+        points = p1, p2, p3 = [Point(0.), Point(1.), Point(3.5), ]
         point = Point(1.5)
-        indexed_points = self._create(self._3_node, [point, Point(2.5)])
+        finder = self._create(points, [point, Point(2.5)])
 
-        result = indexed_points.get_index(point)
+        result = finder(point)
 
-        expected = 1.25
+        expected = {p2: .5, p3: 2.0}
 
-        self.assertAlmostEqual(expected, result)
+        self.assertEqual(expected, result)
 
     def test_Call_PointCloserToTheRightNode_ReturnGridIndex(self):
+        points = p1, p2, p3 = [Point(0.), Point(1.), Point(3.), ]
         point = Point(2.5)
-        indexed_points = self._create(self._3_node, [point])
+        finder = self._create(points, [point])
 
-        result = indexed_points.get_index(point)
+        result = finder(point)
 
-        expected = 1.75
+        expected = {p2: 1.5, p3: .5}
 
-        self.assertAlmostEqual(expected, result)
+        self.assertEqual(expected, result)
 
     def _create(self, *args, **kwargs):
-        return IndexedPoints(*args, **kwargs)
+        return ClosePointsFinder(*args, **kwargs)

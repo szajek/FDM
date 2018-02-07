@@ -1,13 +1,12 @@
 import math
 import unittest
 
-from mock import MagicMock, patch
 import numpy as np
+from mock import MagicMock
 
 from fdm.equation import (LazyOperation, Operator, Stencil, DynamicElement, Scheme, Number, Element, \
-                          operate, merge_weights, MutateMixin, create_weights_distributor, Template)
-from fdm.geometry import FreeVector, Point, Vector, IndexedPoints
-from fdm.mesh import Mesh
+                          operate, merge_weights, MutateMixin, create_weights_distributor)
+from fdm.geometry import FreeVector, Point, Vector, ClosePointsFinder
 
 
 def _are_the_same_objects(obj, mutated):
@@ -729,23 +728,22 @@ class NumberTest(unittest.TestCase):
 
 
 class WeightDistributorTest(unittest.TestCase):
-
     def test_Distribute_CoincidentWithNode_ReturnDictWithValues(self):
         points = p1, p2 = [Point(0.), Point(1.)]
-        indexed_points = IndexedPoints(points, [p1])
+        close_point_finder = ClosePointsFinder(points, [p1])
 
-        distributor = self._create(indexed_points)
+        distributor = self._create(close_point_finder)
 
         result = distributor(p1, 1.)
 
-        expected = {p1: 1.}
+        expected = {p1: 1., p2: 0.}
 
         self.assertEqual(expected, result)
 
     def test_Distribute_BetweenNodes_ReturnDictWithValues(self):
         points = p1, p2 = Point(1.), Point(2.)
         middle_point = Point(1.2)
-        indexed_points = IndexedPoints(points, [middle_point])
+        indexed_points = ClosePointsFinder(points, [middle_point])
 
         distributor = self._create(indexed_points)
 
@@ -758,13 +756,13 @@ class WeightDistributorTest(unittest.TestCase):
 
     def test_Distribute_LastNode_ReturnDictWithValues(self):
         points = p1, p2 = Point(1.), Point(2.)
-        indexed_points = IndexedPoints(points, [p2])
+        indexed_points = ClosePointsFinder(points, [p2])
 
         distributor = self._create(indexed_points)
 
         result = distributor(p2, 1.)
 
-        expected = {p2: 1.}
+        expected = {p1: 0., p2: 1.}
 
         self.assertEqual(expected, result)
 

@@ -1,11 +1,12 @@
 import unittest
 
 import numpy as np
+from mock import MagicMock
 
 from fdm import Mesh
+from fdm.analysis import (SchemeWriter, Output, create_variables, FreeValueWriter, OrderedNodes)
 from fdm.equation import Scheme
 from fdm.geometry import Point
-from fdm.analysis import (SchemeWriter, Output, create_variables, FreeValueWriter)
 
 
 def create_mesh(node_number, virtual_nodes=(), delta=2.):
@@ -78,9 +79,9 @@ class CreateVariablesTest(unittest.TestCase):
     def test_Call_OnlyRealNodes_ReturnNodeToVariableNumberMapper(self):
         real_nodes = n1, n2 = Point(1.), Point(2.)
 
-        grid = self._create_grid(real_nodes)
+        nodes = self._create_ordered_nodes(real_nodes)
 
-        result = create_variables(grid)
+        result = create_variables(nodes)
 
         expected = {n1: 0, n2: 1}
 
@@ -90,19 +91,16 @@ class CreateVariablesTest(unittest.TestCase):
         real_nodes = n1, n2 = Point(1.), Point(2.)
         virtual_nodes = v1, v2 = Point(-1.), Point(3.)
 
-        grid = self._create_grid(real_nodes, virtual_nodes)
+        nodes = self._create_ordered_nodes(real_nodes, virtual_nodes)
 
-        result = create_variables(grid)
+        result = create_variables(nodes)
 
         expected = {n1: 0, n2: 1, v1: 2, v2: 3}
 
         self.assertEqual(expected, result)
 
-    def _create_grid(self, real_nodes, virtual_nodes=()):
-        return Mesh(
-            real_nodes,
-            virtual_nodes=virtual_nodes
-        )
+    def _create_ordered_nodes(self, real_nodes, virtual_nodes=()):
+        return real_nodes + virtual_nodes
 
 
 class OutputTest(unittest.TestCase):
@@ -141,3 +139,21 @@ class OutputTest(unittest.TestCase):
         self.assertEquals(expected, result)
 
 
+class OrderedNodesTest(unittest.TestCase):
+    def test_IndicesForReal_Always_ReturnRealNodesIndices(self):
+
+        rn = [Point(1.)]
+        vn = [Point(-1.)]
+
+        mesh = MagicMock(
+            real_nodes=rn,
+            virtual_nodes=vn,
+        )
+
+        o = OrderedNodes(mesh)
+
+        result = o.indices_for_real
+
+        expected = [0]
+
+        self.assertEquals(expected, result)

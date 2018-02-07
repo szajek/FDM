@@ -158,41 +158,62 @@ def calculate_extreme_coordinates(points):
     return tuple(zip(*[(min(coords), max(coords)) for coords in zip(*map(list, points))]))
 
 
-class IndexedPoints:
+def detect_dimension(points_coords_array):
+    for i, s in enumerate(reversed(np.sum(np.abs(points_coords_array), axis=0))):
+        if s > 0.:
+            return 3 - i
+    else:
+        return 1
+
+
+def points_to_coords_array(points):
+    return np.array([list(point) for point in points])
+
+
+class ClosePointsFinder:
     def __init__(self, base_points, points_to_look_for):
+
+        assert len(points_to_look_for) > 0, "No 'look for' points are provided."
+
         self._base_points = base_points
+        self._base_points_number = len(base_points)
         self._points_to_look_for = points_to_look_for
 
-        self._points_to_look_for_indices = dict(((point, i) for i, point in enumerate(points_to_look_for)))
+        self._base_points_array = points_to_coords_array(base_points)
+        self._look_for_points_array = points_to_coords_array(points_to_look_for)
+        self._look_for_point_to_indices = {p: i for i, p in enumerate(points_to_look_for)}
 
-        self._base_points_array = np.array([list(point) for point in self._base_points])
-        self._look_for_points_array = np.array([list(point) for point in self._points_to_look_for])
+        self._correct_base_point_acc_space_dimension()
+        self._compute()
 
-        self._find_points_indices()
+    def _correct_base_point_acc_space_dimension(self):
+        space_dimension = detect_dimension(np.vstack((self._base_points_array, self._look_for_points_array)))
+        if space_dimension == 1:
+            add_points = self._create_virtual_base_points_for_one_dimension()
+            add_points_array = np.array([list(point) for point in add_points])
+            self._base_points_array = np.vstack((self._base_points_array, add_points_array))
+        elif space_dimension == 3:
+            raise AttributeError("3D space is not serviced yet.")
 
-    def _find_points_indices(self):
+    def _create_virtual_base_points_for_one_dimension(self):
+        points = list(sorted(self._base_points, key=lambda item: list(item)[0]))
+        return [Point((points[i].x + points[i+1].x)/2., 1.) for i in range(len(points)-1)]
 
-        ckd_tree = scipy.spatial.cKDTree(self._base_points_array)
-        distances, close_points_indexes = ckd_tree.query(self._look_for_points_array, k=2)
+    def _compute(self):
 
-        self._indices = [
-            self._find_point_index(i, close_points_indexes[i][0])
-            for i in range(len(self._points_to_look_for))
-        ]
+        self._triangle = scipy.spatial.Delaunay(self._base_points_array[:, :2])
+        self._simplices = self._triangle.find_simplex(self._look_for_points_array[:, :2])
+        self._distances = scipy.spatial.distance.cdist(self._look_for_points_array, self._base_points_array)
 
-    def _find_point_index(self, i, the_closest_point):
-        x = self._look_for_points_array[i][0]
-        idx = the_closest_point
+    def _find(self, point):
+        look_for_idx = self._look_for_point_to_indices[point]
 
-        bind_with_left = idx == len(self._base_points_array) - 1 or x < self._base_points_array[idx][0]
-        i1, i2 = (idx - 1, idx) if bind_with_left else (idx, idx + 1)
-        d1, d2 = abs(self._base_points_array[[i1, i2], 0] - [x, x])
+        simplex_number = self._simplices[look_for_idx]
+        assert simplex_number != -1, "Simplex has not been found"
 
-        return i1 + (d1 / (d1 + d2))
+        indices = self._triangle.simplices[simplex_number]
+        return {self._base_points[base_idx]: self._distances[look_for_idx][base_idx] for base_idx in indices
+                if base_idx < self._base_points_number}
 
-    def get_index(self, point):
-        return self._indices[self._points_to_look_for_indices[point]]
-
-    def get_point(self, index):
-        assert math.fmod(index, 1) == 0, "Point index must be integer"
-        return self._base_points[index]
+    def __call__(self, point):
+        return self._find(point)

@@ -416,11 +416,10 @@ class LoadVectorValueFactory:
 class MassSchemeFactory:
     def __init__(self, length, span, density_controller, context):
         self._density_controller = density_controller
-        self._context = context
 
     def __call__(self, point):
         return fdm.Stencil(
-                    {Point(0.): 1.}
+                    {Point(0.): self._density_controller.get(point)}
                 )
 
 
@@ -482,8 +481,12 @@ def _create_eigenproblem_boundary(length, span, mesh, boundary, virtual_boundary
         )
         return dict(bcs)
 
+    def _create_virtual_boundary(nodes):
+        return {node: (fdm.Stencil({}), fdm.Stencil({})) for node in nodes}
+
     return dicttools.merge(
         _create_real_boundary(),
+        _create_virtual_boundary(mesh.virtual_nodes)
     )
 
 
@@ -543,7 +546,7 @@ class Truss1d:
         self.density_controller = DENSITY_CONTROLLERS['uniform'](1.)
 
     def set_analysis_type(self, _type):
-        _type = self._context['analysis_type'] = fdm.analysis.AnalysisType[_type]
+        self._context['analysis_type'] = fdm.analysis.AnalysisType[_type]
         return self
 
     def set_density_controller(self, _type, **options):

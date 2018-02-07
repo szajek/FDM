@@ -11,7 +11,6 @@ class Mesh(metaclass=Immutable):
     def __init__(self, nodes, virtual_nodes=()):
         self.real_nodes = tuple(nodes)
         self.virtual_nodes = tuple(virtual_nodes)
-        self.all_nodes = list(sorted(self.real_nodes + self.virtual_nodes, key=lambda item: item.x))
 
 
 class Mesh1DBuilder:

@@ -4,12 +4,16 @@ import enum
 import functools
 import math
 
+import dicttools
 import numpy as np
 
 from fdm.geometry import Point, FreeVector, Vector
 from fdm.mesh import NODE_TOLERANCE
 
 __all__ = ['Scheme', 'Element', 'Stencil', 'DynamicElement', 'LazyOperation', 'Operator', 'Number', 'Template']
+
+
+WEIGHT_TOL = 1e-6
 
 
 class MutateMixin:
@@ -37,7 +41,7 @@ def merge_weights(*weights):
         for point, factor in w.items():
             merged[point] += factor
 
-    return merged
+    return dict(merged)
 
 
 class Scheme(collections.Mapping):
@@ -140,24 +144,14 @@ class Scheme(collections.Mapping):
         )
 
 
-def create_weights_distributor(indexed_points):
+def create_weights_distributor(close_point_finder):
 
     def distribute(point, value):
-        pos = indexed_points.get_index(point)
-        idx = int(pos)
-        modulo = math.fmod(pos, 1.)
-
-        n1 = indexed_points.get_point(idx)
-
-        if modulo < NODE_TOLERANCE:
-            return {n1: value}
-        elif abs(1. - modulo) < NODE_TOLERANCE:
-            n2 = indexed_points.get_point(idx + 1)
-            return {n2: value}
-        else:
-            n2 = indexed_points.get_point(idx + 1)
-            _w1, _w2 = (1. - modulo), modulo
-            return {n1: _w1*value, n2: _w2*value}
+        close_points = close_point_finder(point)
+        distance_sum = sum(close_points.values())
+        return dict(
+            {p: (1. - distance/distance_sum)*value for p, distance in close_points.items()},
+        )
     return distribute
 
 

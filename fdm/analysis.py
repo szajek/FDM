@@ -6,11 +6,14 @@ import itertools
 import numpy as np
 
 from fdm.equation import create_weights_distributor, Scheme
-from fdm.geometry import IndexedPoints
+from fdm.geometry import ClosePointsFinder
 
 np.set_printoptions(suppress=True, linewidth=500, threshold=np.nan)
 
 __all__ = ['solve', 'AnalysisType']
+
+
+EPS = np.finfo(np.float64).eps
 
 
 class AnalysisType(enum.Enum):
@@ -111,7 +114,7 @@ def _map_data_to_points(points, expanded_data):
     free_points = _extract_points_from_data(expanded_data)
 
     distributor = create_weights_distributor(
-        IndexedPoints(points, free_points)
+        ClosePointsFinder(points, free_points)
     )
 
     def distribute(item):
@@ -136,35 +139,65 @@ def _extract_points_from_data(expanded_data):
     )
 
 
-def create_variables(mesh):
-    return {p: i for i, p in enumerate(mesh.real_nodes + mesh.virtual_nodes)}
+def create_variables(ordered_nodes):
+    return {p: i for i, p in enumerate(ordered_nodes)}
+
+
+class OrderedNodes(collections.Sequence):
+    def __init__(self, mesh):
+        self.indices_for_real = []
+        self._items = self._create(mesh)
+
+    def _create(self, mesh):
+        self.indices_for_real = list(range(len(mesh.real_nodes)))
+        return mesh.real_nodes + mesh.virtual_nodes
+
+    def __len__(self):
+        return len(self._items)
+
+    def __getitem__(self, index):
+        return self._items[index]
+
+
+def null_input_modifier(ordered_nodes,  *args):
+    return args
 
 
 class Analyser:
-    def __init__(self, equation, input_builders, solver, output_parser):
+    def __init__(self, equation, input_builders, solver, output_parser,
+                 input_modifier=null_input_modifier):
+
         self._equation = equation
         self._input_builders = input_builders
+        self._input_modifier = input_modifier
         self._solver = solver
         self._output_parser = output_parser
 
-    def solve(self, model):
-        variables = create_variables(model.mesh)
+    def __call__(self, model):
+        ordered_nodes = OrderedNodes(model.mesh)
+        variables = create_variables(ordered_nodes)
         return self._output_parser(
                 self._solver(*
-                             self._build_input(
-                                 self._build_equations(model),
-                                 variables
-                             )
+                             self._input_modifier(
+                                 ordered_nodes,
+                                 *self._build_input(
+                                     self._build_equations(model.template, ordered_nodes),
+                                     variables
+                                    )
+                                )
                              ),
                 len(model.mesh.real_nodes),
                 variables
             )
 
+    def solve(self, model):
+        return self.__call__(model)
+
     def _build_input(self, equations, variables):
         return EquationWriter(*(builder(variables) for builder in self._input_builders)).write(*zip(*equations))
 
-    def _build_equations(self, model):
-        return [self._equation(*data) for data in expand_template(model.template, model.mesh.all_nodes)]
+    def _build_equations(self, template, ordered_nodes):
+        return [self._equation(*data) for data in expand_template(template, ordered_nodes)]
 
 
 def linear_system_solver(A, b):
@@ -177,6 +210,11 @@ def linear_system_output_parser(field, variable_number, variables):
     )
 
 
+def eigenproblem_input_modifier(ordered_nodes, A, B):
+    indices = np.ix_(ordered_nodes.indices_for_real, ordered_nodes.indices_for_real)
+    return A[indices], B[indices]
+
+
 def eigenproblem_solver(A, B):
     matrix = np.dot(B, np.linalg.inv(A))
     return np.linalg.eig(matrix)
@@ -186,10 +224,14 @@ def eigenproblem_output_parser(row_output, variable_number, variables):
     def correct_eval(value):
         return -1./value
 
+    def normalize(v):
+        extreme = max([np.max(v), abs(np.min(v))])
+        return v if abs(extreme) < EPS else v / extreme
+
     evals, evects = row_output
     return EigenproblemResults(
         [correct_eval(eval) for eval in evals],
-        [Output(evects[:, i], variable_number, variables)
+        [Output(normalize(evects[:, i]), variable_number, variables)
          for i in range(evects.shape[1])]
     )
 
@@ -206,9 +248,10 @@ _solvers = {
         (SchemeWriter, SchemeWriter),
         eigenproblem_solver,
         eigenproblem_output_parser,
+        input_modifier=eigenproblem_input_modifier,
     ),
 }
 
 
 def solve(solver, model):
-    return _solvers[solver].solve(model)
+    return _solvers[solver](model)

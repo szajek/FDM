@@ -72,35 +72,42 @@ class TrussStaticEquationFiniteDifferencesTest(unittest.TestCase):
 class TrussDynamicEigenproblemEquationFiniteDifferencesTest(unittest.TestCase):
     def setUp(self):
         self._length = 1.
-        self._node_number = 31
+        self._node_number = 11
 
-    def test_ConstantSectionAndYoung_ReturnCorrectDisplacement(self):
+    def test_ConstantSectionAndYoung_ReturnCorrectEigenValuesAndVectors(self):
 
         model = (
             self._create_predefined_builder()
         ).create()
 
-        result = self._solve(model).eigenvectors[0]
+        result = self._solve(model)
 
-        # expected = np.array([0., -0.3717, -0.6015, -0.6015, -0.3717, 0.], )
-        expected = np.array([0., -0.026989, -0.053683, -0.079788, -0.105019, -0.129099, -0.151765, -0.172769, -0.191879, -0.208887,
-                  -0.223607, -0.235876, -0.245562, -0.252557, -0.256784, -0.258199, -0.256784, -0.252557, -0.245562,
-                  -0.235876, -0.223607, -0.208887, -0.191879, -0.172769, -0.151765, -0.129099, -0.105019, -0.079788,
-                  -0.053683, -0.026989, 0.])
+        expected_eigenvectors = np.array(
+            [
+                [0., 0.309017, 0.587785, 0.809017, 0.951057, 1., 0.951057, 0.809017, 0.587785, 0.309017, 0.],
+                [0., 0.618034, 1., 1., 0.618034, 0., -0.618034, -1., -1., -0.618034, 0.],
+                [0., 0.809017, 0.951057, 0.309017, -0.587785, -1., -0.587785, 0.309017, 0.951057, 0.809017, 0.]
+            ]
+        )
+        expected_eigenvalues = [
+            9.7887,
+            38.197,
+            82.443,
+        ]  # rad/s
 
-        np.testing.assert_allclose(expected, result, atol=1e-4)
+        for i, (expected_value, expected_vector) in enumerate(zip(expected_eigenvalues, expected_eigenvectors)):
+            self.assertAlmostEqual(expected_value, result.eigenvalues[i], places=3)
+            np.testing.assert_allclose(expected_vector, result.eigenvectors[i], atol=1e-6)
 
     def _create_predefined_builder(self):
         return (
             builder.create(self._length, self._node_number)
                 .set_analysis_type('EIGENPROBLEM')
+                .set_young_modulus(1.)
                 .set_boundary(builder.Side.LEFT, builder.BoundaryType.FIXED)
                 .set_boundary(builder.Side.RIGHT, builder.BoundaryType.FIXED)
                 .set_load(builder.LoadType.MASS)
-                # .add_virtual_nodes(1, 1)
-                # .set_virtual_boundary_strategy(model.VirtualBoundaryStrategy.SYMMETRY)
-                # .set_virtual_boundary_strategy('based_on_second_derivative')
-
+                .set_virtual_boundary_strategy(builder.VirtualBoundaryStrategy.SYMMETRY)
         )
 
     def _solve(self, model):
