@@ -195,7 +195,7 @@ class ClosePointsFinderForOneDimensionTest(unittest.TestCase):
 
         self.assertEqual(expected, result)
 
-    def test_Call_PointCloserToTheLeftNode_ReturnPointBetween(self):
+    def test_Call_PointCloserToTheLeftNode_ReturnTheClosestPointsAndDistances(self):
         points = p1, p2, p3 = [Point(0.), Point(1.), Point(3.5), ]
         point = Point(1.5)
         finder = self._create(points, [point, Point(2.5)])
@@ -206,7 +206,7 @@ class ClosePointsFinderForOneDimensionTest(unittest.TestCase):
 
         self.assertEqual(expected, result)
 
-    def test_Call_PointCloserToTheRightNode_ReturnGridIndex(self):
+    def test_Call_PointCloserToTheRightNode_ReturnTheClosestPointsAndDistances(self):
         points = p1, p2, p3 = [Point(0.), Point(1.), Point(3.), ]
         point = Point(2.5)
         finder = self._create(points, [point])
@@ -216,6 +216,19 @@ class ClosePointsFinderForOneDimensionTest(unittest.TestCase):
         expected = {p2: 1.5, p3: .5}
 
         self.assertEqual(expected, result)
+
+    def test_Call_PointSlightlyBeyondDomainAndToleranceGiven_ReturnTheClosestPointsAndDistances(self):
+        points = p1, p2 = [Point(0.), Point(3.), ]
+        tol = 1e-6
+        to_find = Point(3. + tol)
+        finder = self._create(points, [to_find], tolerance=tol)
+
+        result = finder(to_find)
+
+        expected = {p1: 3., p2: 0.}
+
+        for p in points:
+            self.assertTrue(abs(expected[p] - result[p]) < tol*1.1)
 
     def _create(self, *args, **kwargs):
         return ClosePointsFinder(*args, **kwargs)

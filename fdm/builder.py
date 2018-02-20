@@ -240,13 +240,17 @@ SIMPLE_COMPUTING_PROCEDURE = lambda point, calculator: calculator(point)
 
 
 class SplineDensityController(collections.Mapping):
-    def __init__(self, length, computing_procedure=SIMPLE_COMPUTING_PROCEDURE, controllers_number=6):
+    def __init__(self, length, computing_procedure=SIMPLE_COMPUTING_PROCEDURE, controllers_number=6,
+                 controllers_coordinates=None, order=3):
         self._length = length
         self._computing_procedure = computing_procedure
         self._controllers_number = controllers_number
+        self._order = order
 
         self._values = {}
-        self._control_points = self._create_control_points()
+        self._control_points = controllers_coordinates or self._create_control_points()
+        assert controllers_coordinates is None or len(controllers_coordinates) == controllers_number, \
+            "'controllers_number' must equal length of 'controllers_coordinates'"
         self._control_values = None
 
     def update_by_control_points(self, controllers_values):
@@ -265,12 +269,11 @@ class SplineDensityController(collections.Mapping):
         return self._values.setdefault(point, self._computing_procedure(point, self._calculate))
 
     def _calculate(self, point):
-        order = 3
         return float(scipy.interpolate.spline(
             self._control_points,
             self._control_values,
             [point.x],
-            order=order
+            order=self._order
         )[0])
 
     def __len__(self):
@@ -310,10 +313,25 @@ class UniformDensityController(DensityController):
         self._value = value
 
 
+class DirectDensityController(DensityController):
+    def __init__(self, length, nodes_numbers, default=1.):
+        span = length/(nodes_numbers - 1)
+        points = [Point(i*span) for i in range(nodes_numbers)]
+        self._values = {p: default for p in points}
+
+    def get(self, point):
+        assert self._values is not None, "Update density first."
+        return self._values[point]
+
+    def update(self, values):
+        self._values.update(values)
+
+
 DENSITY_CONTROLLERS = {
     'spline': create_spline_density_controller,
     'spline_interpolated_linearly': create_linearly_interpolated_spline_density_controller,
     'uniform': UniformDensityController,
+    'direct': DirectDensityController,
 }
 
 
@@ -514,9 +532,10 @@ def create_template(_type, stiffness_factory, length, span, mesh, density_contro
 
     items = [all_items[no] for no in valid_items_numbers[_type]]
 
-    return fdm.equation.Template(
-        lambda point: bcs.get(point, [item(point) for item in items])
-    )
+    def get_expander(point):
+        return bcs.get(point, [item(point) for item in items])
+
+    return fdm.equation.Template(get_expander)
 
 
 class Truss1d:

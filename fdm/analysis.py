@@ -4,6 +4,7 @@ import enum
 import itertools
 
 import numpy as np
+import scipy.linalg
 
 from fdm.equation import create_weights_distributor, Scheme
 from fdm.geometry import ClosePointsFinder
@@ -216,24 +217,42 @@ def eigenproblem_input_modifier(ordered_nodes, A, B):
 
 
 def eigenproblem_solver(A, B):
-    matrix = np.dot(B, np.linalg.inv(A))
-    return np.linalg.eig(matrix)
+    evals, evects = scipy.linalg.eig(A, b=B)
+    idx = evals.argsort()[::-1]
+    return evals[idx], evects[:, idx]
 
 
 def eigenproblem_output_parser(row_output, variable_number, variables):
     def correct_eval(value):
-        return -1./value
+        return -value.real
+
+    def are_increasing(a, b):
+        return b - a > 0.
+
+    def invert_to_positive(e):
+        s1 = np.sum(e)
+        s2 = np.sum(np.negative(e))
+        return e if s1 > s2 else np.negative(e)
 
     def normalize(v):
         extreme = max([np.max(v), abs(np.min(v))])
         return v if abs(extreme) < EPS else v / extreme
 
+    def extract_real_part(value):
+        return np.array([v.real for v in value])
+
+    def correct_evec(value):
+        corrected = invert_to_positive(normalize(extract_real_part(value)))
+        return corrected if are_increasing(*corrected[:2]) else np.negative(corrected)
+
     evals, evects = row_output
-    return EigenproblemResults(
-        [correct_eval(eval) for eval in evals],
-        [Output(normalize(evects[:, i]), variable_number, variables)
-         for i in range(evects.shape[1])]
-    )
+
+    eigenvectors = [correct_evec(evects[:, i]) for i in range(evects.shape[1])]
+
+    converted = [(correct_eval(eval), Output(evec, variable_number, variables))
+                 for eval, evec in zip(evals, eigenvectors) if eval.real not in [np.inf, -np.inf]]
+
+    return EigenproblemResults(*zip(*converted))
 
 
 _solvers = {
@@ -253,5 +272,5 @@ _solvers = {
 }
 
 
-def solve(solver, model):
-    return _solvers[solver](model)
+def solve(_type, model):
+    return _solvers[_type](model)

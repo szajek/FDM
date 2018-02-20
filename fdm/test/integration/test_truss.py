@@ -99,6 +99,47 @@ class TrussDynamicEigenproblemEquationFiniteDifferencesTest(unittest.TestCase):
             self.assertAlmostEqual(expected_value, result.eigenvalues[i], places=3)
             np.testing.assert_allclose(expected_vector, result.eigenvectors[i], atol=1e-6)
 
+    def test_LocalSectionReduction_ReturnCorrectEigenValuesAndVectors(self):
+
+        builder = self._create_predefined_builder()
+        data = [
+            [0., 1.],
+            [0.20, 1.],
+            [0.21, 0.2],
+            # [0.21, 1.],
+            [0.39, 0.2],
+            # [0.39, 1.],
+            [0.40, 1.],
+            [1., 1.]
+        ]
+        xs, values = zip(*data)
+        builder.set_density_controller('spline', controllers_number=6, controllers_coordinates=xs, order=1)
+        builder.density_controller.update_by_control_points(values)
+        builder.set_stiffness_to_density_relation('exponential', c_1=1., c_2=1.)
+
+        model = builder.create()
+
+        result = self._solve(model)
+
+        expected_eigenvectors = np.array(
+            [
+                [-0.0, 0.109264, 0.209878, 0.629871, 1.0, 0.994859, 0.910958, 0.75494, 0.539156, 0.280689, -0.0],
+                [-0.0, 0.629629, 1.0, 0.793039, 0.259534, 0.0459666, -0.186528, -0.342218, -0.356995, -0.224774, -0.0],
+                [-0.0, 0.529211, 0.767237, -0.153396, -0.989627, -0.6123558, 0.101848, 0.760013, 1.0, 0.689762, -0.0],
+            ]
+        )
+
+        expected_eigenvalues = [
+            7.9167,
+            41.1763,
+            55.0225,
+        ]  # rad/s
+
+        for i, (expected_value, expected_vector) in enumerate(zip(expected_eigenvalues, expected_eigenvectors)):
+
+            np.testing.assert_allclose(expected_vector, result.eigenvectors[i], atol=1e-6)
+            self.assertAlmostEqual(expected_value, result.eigenvalues[i], places=3)
+
     def _create_predefined_builder(self):
         return (
             builder.create(self._length, self._node_number)

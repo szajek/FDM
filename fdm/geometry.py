@@ -171,13 +171,14 @@ def points_to_coords_array(points):
 
 
 class ClosePointsFinder:
-    def __init__(self, base_points, points_to_look_for):
+    def __init__(self, base_points, points_to_look_for, tolerance=1e-6):
 
         assert len(points_to_look_for) > 0, "No 'look for' points are provided."
 
         self._base_points = base_points
         self._base_points_number = len(base_points)
         self._points_to_look_for = points_to_look_for
+        self._tolerance = tolerance
 
         self._base_points_array = points_to_coords_array(base_points)
         self._look_for_points_array = points_to_coords_array(points_to_look_for)
@@ -202,14 +203,14 @@ class ClosePointsFinder:
     def _compute(self):
 
         self._triangle = scipy.spatial.Delaunay(self._base_points_array[:, :2])
-        self._simplices = self._triangle.find_simplex(self._look_for_points_array[:, :2])
+        self._simplices = self._triangle.find_simplex(self._look_for_points_array[:, :2], tol=self._tolerance)
         self._distances = scipy.spatial.distance.cdist(self._look_for_points_array, self._base_points_array)
 
     def _find(self, point):
         look_for_idx = self._look_for_point_to_indices[point]
 
         simplex_number = self._simplices[look_for_idx]
-        assert simplex_number != -1, "Simplex has not been found"
+        assert simplex_number != -1, "Simplex has not been found for {}".format(str(point))
 
         indices = self._triangle.simplices[simplex_number]
         return {self._base_points[base_idx]: self._distances[look_for_idx][base_idx] for base_idx in indices

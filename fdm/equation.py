@@ -2,18 +2,12 @@ import abc
 import collections
 import enum
 import functools
-import math
 
-import dicttools
 import numpy as np
 
 from fdm.geometry import Point, FreeVector, Vector
-from fdm.mesh import NODE_TOLERANCE
 
 __all__ = ['Scheme', 'Element', 'Stencil', 'DynamicElement', 'LazyOperation', 'Operator', 'Number', 'Template']
-
-
-WEIGHT_TOL = 1e-6
 
 
 class MutateMixin:
