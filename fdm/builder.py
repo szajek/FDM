@@ -235,11 +235,14 @@ class DensityController(metaclass=abc.ABCMeta):
     def get(self, point):
         raise NotImplementedError
 
+    def __call__(self, point):
+        return self.get(point)
+
 
 SIMPLE_COMPUTING_PROCEDURE = lambda point, calculator: calculator(point)
 
 
-class SplineDensityController(collections.Mapping):
+class SplineValueController(DensityController):
     def __init__(self, length, computing_procedure=SIMPLE_COMPUTING_PROCEDURE, controllers_number=6,
                  controllers_coordinates=None, order=3):
         self._length = length
@@ -264,7 +267,7 @@ class SplineDensityController(collections.Mapping):
         span = self._length / (self._controllers_number - 1)
         return list(i * span for i in range(self._controllers_number))
 
-    def __getitem__(self, point):
+    def get(self, point):
         assert self._control_values is not None, "Initialize control points first."
         return self._values.setdefault(point, self._computing_procedure(point, self._calculate))
 
@@ -283,11 +286,11 @@ class SplineDensityController(collections.Mapping):
         return iter(self._values)
 
 
-def create_spline_density_controller(length, points_number, **kwargs):
-    return SplineDensityController(length, computing_procedure=SIMPLE_COMPUTING_PROCEDURE, **kwargs)
+def create_spline_value_controller(length, points_number, **kwargs):
+    return SplineValueController(length, computing_procedure=SIMPLE_COMPUTING_PROCEDURE, **kwargs)
 
 
-def create_linearly_interpolated_spline_density_controller(length, points_number, **kwargs):
+def create_linearly_interpolated_spline_value_controller(length, points_number, **kwargs):
     span = length / (points_number - 1)
 
     def compute(point, calculator):
@@ -299,10 +302,10 @@ def create_linearly_interpolated_spline_density_controller(length, points_number
 
         return v1 + (v2 - v1) / (x2 - x1) * (point.x - x1)
 
-    return SplineDensityController(length, computing_procedure=compute, **kwargs)
+    return SplineValueController(length, computing_procedure=compute, **kwargs)
 
 
-class UniformDensityController(DensityController):
+class UniformValueController(DensityController):
     def __init__(self, value):
         self._value = value
 
@@ -313,25 +316,34 @@ class UniformDensityController(DensityController):
         self._value = value
 
 
-class DirectDensityController(DensityController):
+class DirectValueController(DensityController):
     def __init__(self, length, nodes_numbers, default=1.):
         span = length/(nodes_numbers - 1)
         points = [Point(i*span) for i in range(nodes_numbers)]
         self._values = {p: default for p in points}
 
     def get(self, point):
-        assert self._values is not None, "Update density first."
+        assert self._values is not None, "Update values first."
         return self._values[point]
 
     def update(self, values):
         self._values.update(values)
 
 
-DENSITY_CONTROLLERS = {
-    'spline': create_spline_density_controller,
-    'spline_interpolated_linearly': create_linearly_interpolated_spline_density_controller,
-    'uniform': UniformDensityController,
-    'direct': DirectDensityController,
+class UserValueController(DensityController):
+    def __init__(self, _callable):
+        self._callable = _callable
+
+    def get(self, point):
+        return self._callable(point)
+
+
+VALUE_CONTROLLERS = {
+    'spline': create_spline_value_controller,
+    'spline_interpolated_linearly': create_linearly_interpolated_spline_value_controller,
+    'uniform': UniformValueController,
+    'direct': DirectValueController,
+    'user': UserValueController,
 }
 
 
@@ -562,14 +574,14 @@ class Truss1d:
             'young_modulus': 1.,
         }
 
-        self.density_controller = DENSITY_CONTROLLERS['uniform'](1.)
+        self.density_controller = VALUE_CONTROLLERS['uniform'](1.)
 
     def set_analysis_type(self, _type):
         self._context['analysis_type'] = fdm.analysis.AnalysisType[_type]
         return self
 
     def set_density_controller(self, _type, **options):
-        self.density_controller = DENSITY_CONTROLLERS[_type](self._length, self._nodes_number, **options)
+        self.density_controller = VALUE_CONTROLLERS[_type](self._length, self._nodes_number, **options)
         return self
 
     def set_boundary(self, side, _type, **opts):
