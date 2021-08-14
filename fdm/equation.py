@@ -328,6 +328,18 @@ class Stencil(Element):
     def scale(self, multiplier):
         return Stencil({point * multiplier: value for point, value in self._weights.items()})
 
+    def symmetry(self, point):
+        def find_symmetry_point(_point):
+            return _point + 2.*Vector(_point, point)
+
+        return Stencil(
+            {find_symmetry_point(point): weight for point, weight in self._weights.items()}
+        )
+
+    def multiply(self, multiplier):
+        assert isinstance(multiplier, (int, float))
+        return Stencil({point: value * multiplier for point, value in self._weights.items()})
+
     def __repr__(self):
         return "{name}: {data}".format(
             name=self.__class__.__name__, data=self._weights)
@@ -380,6 +392,7 @@ class Number(Element):
 
 
 #
+
 
 class Template(collections.Sequence):
     def __init__(self, items):

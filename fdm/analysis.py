@@ -164,6 +164,10 @@ def null_input_modifier(ordered_nodes,  *args):
     return args
 
 
+def null_spy(tag, item):
+    return
+
+
 class Analyser:
     def __init__(self, equation, input_builders, solver, output_parser,
                  input_modifier=null_input_modifier):
@@ -174,19 +178,24 @@ class Analyser:
         self._solver = solver
         self._output_parser = output_parser
 
+        self._spy = null_spy
+
+    def install_spy(self, spy):
+        self._spy = spy or null_spy
+
     def __call__(self, model):
         ordered_nodes = OrderedNodes(model.mesh)
         variables = create_variables(ordered_nodes)
-        return self._output_parser(
-                self._solver(*
-                             self._input_modifier(
+        solver_input = self._input_modifier(
                                  ordered_nodes,
                                  *self._build_input(
                                      self._build_equations(model.template, ordered_nodes),
                                      variables
                                     )
                                 )
-                             ),
+        self._spy('solver_input', solver_input)
+        return self._output_parser(
+                self._solver(*solver_input),
                 len(model.mesh.real_nodes),
                 variables
             )
@@ -218,6 +227,7 @@ def eigenproblem_input_modifier(ordered_nodes, A, B):
 
 def eigenproblem_solver(A, B):
     evals, evects = scipy.linalg.eig(A, b=B)
+
     idx = evals.argsort()[::-1]
     return evals[idx], evects[:, idx]
 
@@ -272,5 +282,8 @@ _solvers = {
 }
 
 
-def solve(_type, model):
-    return _solvers[_type](model)
+def solve(_type, model, spy=None):
+    solver = _solvers[_type]
+    solver.install_spy(spy)
+    return solver(model)
+

@@ -1,5 +1,4 @@
 import unittest
-
 import numpy as np
 
 import fdm.builder as builder
@@ -39,7 +38,7 @@ class TrussStaticEquationFiniteDifferencesTest(unittest.TestCase):
         model = (
             self._create_predefined_builder()
                 .set_field(builder.FieldType.CONSTANT, m=1.)
-                .set_young_modulus(young_modulus)
+                .set_young_modulus_controller('user', _callable=young_modulus)
         ).create()
 
         result = self._solve(model)
@@ -58,7 +57,7 @@ class TrussStaticEquationFiniteDifferencesTest(unittest.TestCase):
 
     def _create_predefined_builder(self):
         return (
-            builder.create(self._length, self._node_number)
+            builder.create('truss1d', self._length, self._node_number)
                 .set_analysis_type('SYSTEM_OF_LINEAR_EQUATIONS')
                 .set_boundary(builder.Side.LEFT, builder.BoundaryType.FIXED)
                 .set_boundary(builder.Side.RIGHT, builder.BoundaryType.FREE)
@@ -113,7 +112,7 @@ class TrussDynamicEigenproblemEquationFiniteDifferencesTest(unittest.TestCase):
             [1., 1.]
         ]
         xs, values = zip(*data)
-        builder.set_density_controller('spline', controllers_number=6, controllers_coordinates=xs, order=1)
+        builder.set_density_controller('spline_with_user_knots', xs, order=1)
         builder.density_controller.update_by_control_points(values)
         builder.set_stiffness_to_density_relation('exponential', c_1=1., c_2=1.)
 
@@ -142,14 +141,50 @@ class TrussDynamicEigenproblemEquationFiniteDifferencesTest(unittest.TestCase):
 
     def _create_predefined_builder(self):
         return (
-            builder.create(self._length, self._node_number)
+            builder.create('truss1d', self._length, self._node_number)
                 .set_analysis_type('EIGENPROBLEM')
-                .set_young_modulus(1.)
+                .set_young_modulus_controller('uniform', value=1.)
                 .set_boundary(builder.Side.LEFT, builder.BoundaryType.FIXED)
                 .set_boundary(builder.Side.RIGHT, builder.BoundaryType.FIXED)
-                .set_load(builder.LoadType.MASS)
                 .set_virtual_boundary_strategy(builder.VirtualBoundaryStrategy.SYMMETRY)
         )
+
+    def _solve(self, model):
+        return solve(AnalysisType.EIGENPROBLEM, model)
+
+
+class SprintMassSequenceAndDynamicEigenproblemTest(unittest.TestCase):
+    def setUp(self):
+        self._length = 1.
+        self._node_number = 101
+
+    def test_SectionAndMassSegments_ReturnCorrectEigenValuesAndVectors(self):
+
+        segments_number = 10
+
+        _builder = (
+            builder.create('truss1d', self._length, self._node_number)
+                .set_analysis_type('EIGENPROBLEM')
+                .set_young_modulus_controller('segments', number=segments_number, values=[0.9, 0.973, 0.973, 0.9, 0.8])
+                .set_density_controller('segments_discrete', number=segments_number,
+                                        values=[1e-06, 0.03, 0.32, 0.03, 1e-06], default=1e-10)
+                .set_boundary(builder.Side.LEFT, builder.BoundaryType.FIXED)
+                .set_boundary(builder.Side.RIGHT, builder.BoundaryType.FIXED)
+                .set_virtual_boundary_strategy(builder.VirtualBoundaryStrategy.SYMMETRY)
+            )
+
+        model = _builder.create()
+
+        result = self._solve(model)
+
+        expected_eigenvalues = [
+            9.91,
+            22.407,
+            338.48,
+        ]  # rad/s
+
+        for i, expected_value in enumerate(expected_eigenvalues):
+            self.assertAlmostEqual(expected_value, result.eigenvalues[i], places=3)
 
     def _solve(self, model):
         return solve(AnalysisType.EIGENPROBLEM, model)

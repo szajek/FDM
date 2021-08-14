@@ -532,6 +532,24 @@ class StencilTest(unittest.TestCase):
 
         self.assertEqual(expected, result)
 
+    def test_Symmetry_Always_ReturnMirroredStencil(self):
+        s = Stencil({Point(1.): 2.})
+
+        result = s.symmetry(Point(2.))
+
+        expected = Stencil({Point(3.): 2.})
+
+        self.assertEqual(expected, result)
+
+    def test_Multiply_Always_ReturnStencilWithMultipliedWeights(self):
+        s = Stencil({Point(1.): 2.})
+
+        result = s.multiply(3.)
+
+        expected = Stencil({Point(1.): 6.})
+
+        self.assertEqual(expected, result)
+
     def _compare_dict(self, d1, d2, tol=1e-4):
         return len(d1) == len(d2) and all(math.fabs(d1[k] - d2[k]) < tol for k in d1.keys())
 

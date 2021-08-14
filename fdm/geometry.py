@@ -68,16 +68,17 @@ class Point:
 
     def __hash__(self):
         if self._hash is None:
-            self._hash = self._hash_pool.setdefault(tuple(self), self._create_hash())
+            self._hash = self._hash_pool.setdefault(self._get_rounded_coords(), self._create_hash())
         return self._hash
 
     def _create_hash(self):
-        return hash(
-            (
-                round(self.x, COORDS_HASH_ACCURACY),
-                round(self.y, COORDS_HASH_ACCURACY),
-                round(self.z, COORDS_HASH_ACCURACY))
-        )
+        return hash(self._get_rounded_coords())
+
+    def _get_rounded_coords(self):
+        return (
+            round(self.x, COORDS_HASH_ACCURACY),
+            round(self.y, COORDS_HASH_ACCURACY),
+            round(self.z, COORDS_HASH_ACCURACY))
 
     def __eq__(self, other):
         if isinstance(other, Point):
@@ -105,6 +106,18 @@ class Vector:
 
     def _calculate_components(self):
         return calculate_points_delta(self.end, self.start)
+
+    def __mul__(self, other):
+        if isinstance(other, (int, float)):
+            return Vector(other*self.start, other*self.end)
+        else:
+            raise NotImplementedError
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
+
+    def __imul__(self, other):
+        return self.__mul__(self, other)
 
     def __neg__(self):
         return Vector(self.end, self.start)

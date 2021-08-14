@@ -12,7 +12,6 @@ import fdm.model
 import fdm
 from fdm.geometry import Point
 
-
 MIN_DENSITY = 1e-2
 
 
@@ -57,6 +56,352 @@ class VirtualBoundaryStrategy(enum.Enum):
     SYMMETRY = 1
 
 
+class Builder1d:
+    def __init__(self, length, nodes_number):
+        self._length = length
+        self._nodes_number = nodes_number
+        self._stiffness_factory = None
+
+        self._span = length / (nodes_number - 1)
+
+        self._context = {
+            'analysis_type': None,
+            'left_virtual_nodes_number': 0,
+            'right_virtual_nodes_number': 0,
+            'boundary': {
+                Side.LEFT: BoundaryType.FIXED,
+                Side.RIGHT: BoundaryType.FIXED,
+            },
+            'operator_dispatcher_strategy': 'standard',
+            'virtual_boundary_strategy': 'null',
+            'field': Field(FieldType.NONE, ()),
+            'load': LoadType.NONE,
+            'stiffness_to_density_relation': None,
+        }
+
+        self.density_controller = self._create_value_controller('uniform', value=1.)
+        self.young_modulus_controller = self._create_value_controller('uniform', value=1.)
+
+    def set_stiffness_factory(self, factory):
+        self._stiffness_factory = factory
+
+    def set_analysis_type(self, _type):
+        self._context['analysis_type'] = fdm.analysis.AnalysisType[_type]
+        return self
+
+    def set_density_controller(self, _type, *args, **options):
+        self.density_controller = self._create_value_controller(_type, *args, **options)
+        return self
+
+    def set_boundary(self, side, _type, **opts):
+        self._context['boundary'][side] = Boundary(_type, opts)
+        return self
+
+    def set_operator_dispatcher_strategy(self, strategy):
+        self._context['operator_dispatcher_strategy'] = strategy
+        return self
+
+    def set_virtual_boundary_strategy(self, _type):
+        self._context['virtual_boundary_strategy'] = _type
+        return self
+
+    def set_field(self, _type, **properties):
+        self._context['field'] = Field(_type, properties)
+        return self
+
+    def set_load(self, _type):
+        self._context['load'] = _type
+        return self
+
+    def set_stiffness_to_density_relation(self, _type, **options):
+        self._context['stiffness_to_density_relation'] = RELATIONS[_type](**options)
+        return self
+
+    def set_young_modulus_controller(self, _type, *args, **options):
+        self.young_modulus_controller = self._create_value_controller(_type, *args, **options)
+        return self
+
+    def _create_value_controller(self, _type, *args, **options):
+        return VALUE_CONTROLLERS[_type](self._length, self._nodes_number, *args, **options)
+
+    def add_virtual_nodes(self, left, right):
+        self._context['left_virtual_nodes_number'] = left
+        self._context['right_virtual_nodes_number'] = right
+        return self
+
+    def create(self):
+        assert self.density_controller is not None, "Define density controller first."
+        assert self.young_modulus_controller is not None, "Define Young modulus controller first."
+        assert self._context['analysis_type'] is not None, "Define analysis type first."
+        mesh = self._create_mesh()
+
+        return fdm.Model(
+            self._create_template(mesh),
+            mesh,
+        )
+
+    def _create_mesh(self):
+        vn_left = [-self._span * (i + 1) for i in range(self._context['left_virtual_nodes_number'])]
+        vn_right = [self._length + self._span * (i + 1) for i in range(self._context['right_virtual_nodes_number'])]
+        return (
+            fdm.Mesh1DBuilder(self._length)
+                .add_uniformly_distributed_nodes(self._nodes_number)
+                .add_virtual_nodes(*(vn_left + vn_right))
+                .create())
+
+    def _create_template(self, mesh):
+        assert self._stiffness_factory is not None, 'Set stiffness factory first'
+        _type = self._context['analysis_type']
+
+        stiffness_operators_set = self._create_stiffness_operators_set()
+
+        stiffness_stencils = OPERATOR_DISPATCHER[self._context['operator_dispatcher_strategy']](
+            stiffness_operators_set, self._length, self._span)
+
+        bcs = BC_BUILDERS[_type](
+            self._length, self._span, mesh, self._context['boundary'], self._context['virtual_boundary_strategy']
+        )
+
+        if _type == fdm.AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS:
+            load_vector = LoadVectorValueFactory(self._length, self._span, self.density_controller, self._context)
+            items = stiffness_stencils, load_vector
+        elif _type == fdm.AnalysisType.EIGENPROBLEM:
+            mass_stencils = MassSchemeFactory(self._length, self._span, self.density_controller, self._context)
+            items = stiffness_stencils, mass_stencils
+        else:
+            raise AttributeError
+
+        def get_expander(point):
+            lhs, rhs = items
+            return bcs.get(point, [lhs, rhs(point)])
+
+        return fdm.equation.Template(get_expander)
+
+    def _create_stiffness_operators_set(self):
+        return self._stiffness_factory(self._span, self._get_corrected_young_modulus)
+
+    def _get_corrected_young_modulus(self, point):
+        correction = self._context['stiffness_to_density_relation']
+        scale = correction(max(self.density_controller.get(point), MIN_DENSITY)) if correction else 1.
+        return self.young_modulus_controller(point) * scale
+
+    @property
+    def _last_node_index(self):
+        return self._nodes_number - 1
+
+    @property
+    def density(self):
+        return self._revolve_for_points(self.density_controller.get)
+
+    @property
+    def young_modulus(self):
+        return self._revolve_for_points(self.young_modulus_controller.get)
+
+    @property
+    def points(self):
+        return [Point(self._span * i) for i in range(self._nodes_number)]
+
+    def _revolve_for_points(self, _callable):
+        return list(map(_callable, self.points))
+
+    def create_density_getter(self):
+        return self.density.get
+
+
+def create_for_truss_1d(length, nodes_number):
+    builder = Builder1d(length, nodes_number)
+    builder.set_stiffness_factory(create_truss1d_stiffness_operators_set)
+    return builder
+
+
+def create_for_beam_1d(length, nodes_number):
+    builder = Builder1d(length, nodes_number)
+    builder.set_stiffness_factory(create_beam1d_stiffness_operators_set)
+    return builder
+
+
+_builders = {
+    'truss1d': create_for_truss_1d,
+    'beam1d': create_for_beam_1d
+}
+
+
+def create(type_, *args, **kwargs):
+    return _builders[type_](*args, **kwargs)
+
+
+def create_truss1d_stiffness_operators_set(span, young_modulus_controller):
+    deformation_operator = fdm.Operator(fdm.Stencil.central(span=span))
+    classical_operator = fdm.Number(young_modulus_controller) * deformation_operator
+    class_eq_central = fdm.Operator(fdm.Stencil.central(span=span), classical_operator)
+    class_eq_backward = fdm.Operator(fdm.Stencil.backward(span=span), classical_operator)
+    class_eq_forward = fdm.Operator(fdm.Stencil.forward(span=span), classical_operator)
+
+    return {
+        'central': class_eq_central,
+        'forward': class_eq_forward,
+        'backward': class_eq_backward,
+        'forward_central': class_eq_central,
+        'backward_central': class_eq_central,
+    }
+
+
+def create_beam1d_stiffness_operators_set(span, young_modulus_controller):
+    central_operator = fdm.Operator(fdm.Stencil.central(span=span))
+    central_stencil = fdm.Stencil.central(span=span)
+    backward_stencil = fdm.Stencil.backward(span=span)
+    forward_stencil = fdm.Stencil.forward(span=span)
+
+    EI = fdm.Number(young_modulus_controller) * fdm.Number(1.)
+
+    class_eq_central = fdm.Operator(
+        central_stencil, fdm.Operator(
+            central_stencil, fdm.Operator(
+                central_stencil, fdm.Operator(
+                    EI * central_operator
+                )
+            )
+        )
+    )
+
+    class_eq_backward = fdm.Operator(
+        backward_stencil, fdm.Operator(
+            backward_stencil, fdm.Operator(
+                backward_stencil, fdm.Operator(
+                    EI * central_operator
+                )
+            )
+        )
+    )
+    class_eq_forward = fdm.Operator(
+        forward_stencil, fdm.Operator(
+            forward_stencil, fdm.Operator(
+                forward_stencil, fdm.Operator(
+                    EI * central_operator
+                )
+            )
+        )
+    )
+
+    return {
+        'central': class_eq_central,
+        'forward': class_eq_forward,
+        'backward': class_eq_backward,
+        'forward_central': class_eq_central,
+        'backward_central': class_eq_central,
+    }
+
+
+def _create_statics_boundary(length, span, mesh, boundary, virtual_boundary_strategy):
+    def _create_real_boundary():
+
+        bcs = []
+        if boundary[Side.LEFT].type != BoundaryType.NONE:
+            bcs.append(
+                (Point(0), statics_bc_equation_builder(Side.LEFT, boundary[Side.LEFT], span))
+            )
+
+        if boundary[Side.RIGHT].type != BoundaryType.NONE:
+            bcs.append(
+                (Point(length), statics_bc_equation_builder(Side.RIGHT, boundary[Side.RIGHT], span))
+            )
+        return dict(bcs)
+
+    def _create_virtual_boundary(nodes):
+        virtual_boundary_builder = VIRTUAL_BOUNDARY_PROVIDER[virtual_boundary_strategy] \
+            (length, span)
+
+        return {node: virtual_boundary_builder(node) for node in nodes}
+
+    return dicttools.merge(
+        _create_real_boundary(),
+        _create_virtual_boundary(mesh.virtual_nodes)
+    )
+
+
+def _create_eigenproblem_boundary(length, span, mesh, boundary, virtual_boundary_strategy):
+    statics_boundary = _create_statics_boundary(length, span, mesh, boundary, virtual_boundary_strategy)
+
+    def create_mass_bc_stencil(_type):
+        if _type == BoundaryType.FIXED:
+            return fdm.Stencil({})
+        else:
+            raise NotImplementedError
+
+    start, end = Point(0), Point(length)
+    left_type, right_type = boundary[Side.LEFT].type, boundary[Side.RIGHT].type
+
+    def _create_real_boundary():
+
+        bcs = []
+        left_type != BoundaryType.NONE and bcs.append(
+            (start, (statics_boundary[start].operator, create_mass_bc_stencil(left_type)))
+        )
+        right_type != BoundaryType.NONE and bcs.append(
+            (end, (statics_boundary[end].operator, create_mass_bc_stencil(right_type)))
+        )
+        return dict(bcs)
+
+    def _create_virtual_boundary(nodes):
+        return {node: (fdm.Stencil({}), fdm.Stencil({})) for node in nodes}
+
+    return dicttools.merge(
+        _create_real_boundary(),
+        _create_virtual_boundary(mesh.virtual_nodes)
+    )
+
+
+BC_BUILDERS = {
+    fdm.AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS: _create_statics_boundary,
+    fdm.AnalysisType.EIGENPROBLEM: _create_eigenproblem_boundary,
+}
+
+
+def _create_static_dirichlet_bc(value=0.):
+    return LinearEquationTemplate(
+        fdm.Operator(fdm.Stencil({Point(0): 1.})),
+        lambda node_address: value,
+    )
+
+
+def _create_static_neumann_bc(stencil, value=0.):
+    return LinearEquationTemplate(
+        fdm.Operator(stencil),
+        lambda node_address: value,
+    )
+
+
+def _create_bc_by_equation(operator, free_value=0.):
+    return LinearEquationTemplate(
+        operator,
+        lambda node_address: free_value,
+    )
+
+
+def _create_virtual_nodes_bc(x, strategy):
+    m = {
+        VirtualBoundaryStrategy.SYMMETRY: 2.,
+        VirtualBoundaryStrategy.AS_AT_BORDER: 1.,
+    }[strategy]
+    return LinearEquationTemplate(
+        fdm.Stencil(
+            {
+                Point(0.): 1.,
+                Point(-np.sign(x) * m * abs(x)): -1.
+            }
+        ),
+        lambda p: 0.
+    )
+
+
+_statics_bc_generators = {
+    'dirichlet': _create_static_dirichlet_bc,
+    'neumann': _create_static_neumann_bc,
+    'equation': _create_bc_by_equation,
+    'virtual_node': _create_virtual_nodes_bc,
+}
+
+
 class LinearEquationTemplate(fdm.Template):
     def __init__(self, operator, free_value):
         self.operator = operator
@@ -69,51 +414,6 @@ class EigenproblemEquationTemplate(fdm.Template):
         self.operator_A = operator_A
         self.operator_B = operator_B
         super().__init__((operator_A, operator_B))
-
-
-def _create_static_dirichlet_bc(value=0.):
-    return LinearEquationTemplate(
-            fdm.Operator(fdm.Stencil({Point(0): 1.})),
-            lambda node_address: value,
-    )
-
-
-def _create_static_neumann_bc(stencil, value=0.):
-    return LinearEquationTemplate(
-            fdm.Operator(stencil),
-            lambda node_address: value,
-    )
-
-
-def _create_bc_by_equation(operator, free_value=0.):
-    return LinearEquationTemplate(
-            operator,
-            lambda node_address: free_value,
-    )
-
-
-def _create_virtual_nodes_bc(x, strategy):
-    m = {
-        VirtualBoundaryStrategy.SYMMETRY: 2.,
-        VirtualBoundaryStrategy.AS_AT_BORDER: 1.,
-    }[strategy]
-    return LinearEquationTemplate(
-            fdm.Stencil(
-                {
-                    Point(0.): 1.,
-                    Point(-np.sign(x) * m * abs(x)): -1.
-                }
-            ),
-            lambda p: 0.
-    )
-
-
-_statics_bc_generators = {
-    'dirichlet': _create_static_dirichlet_bc,
-    'neumann': _create_static_neumann_bc,
-    'equation': _create_bc_by_equation,
-    'virtual_node': _create_virtual_nodes_bc,
-}
 
 
 def create_statics_bc(_type, *args, **kwargs):
@@ -131,32 +431,59 @@ def statics_bc_equation_builder(side, boundary, span):
         raise NotImplementedError
 
 
-def create_virtual_boundary_based_on_second_derivative(length, span, boundaries):
-    def bc_virtual_nodes_builder(side, boundary):
-        _type, opts = boundary
-        if _type == BoundaryType.FIXED:
-            weights = {Point(0) * span: -1., Point(1 * span): 3., Point(2 * span): -3., Point(3 * span): 1.} if side == Side.LEFT \
-                else {Point(-3 * span): 1., Point(-2 * span): -3., Point(-1 * span): 3., Point(0 * span): -1.}
-            return fdm.Operator(fdm.Stencil(weights)), lambda a: 0.
+def create_virtual_boundary_based_on_second_derivative(length, span):
+    def p(s):
+        return Point(span * s)
 
-        elif _type == BoundaryType.FREE:
-            raise NotImplementedError
-        else:
-            raise NotImplementedError
+    def equation(w):
+        return fdm.Operator(fdm.Stencil(w)), lambda a: 0.
 
-    bcs = dict(
-        (
-            (Point(-span), bc_virtual_nodes_builder(Side.LEFT, boundaries[Side.LEFT])),
-            (Point(length + span), bc_virtual_nodes_builder(Side.RIGHT, boundaries[Side.RIGHT])),
-        )
+    left_weights = {p(0): -1., p(1): 3., p(2): -3., p(3): 1.}
+    right_weights = {p(-3): 1., p(-2): -3., p(-1): 3., p(0): -1.}
+
+    bcs = {
+        Point(-span): equation(left_weights),
+        Point(length + span): equation(right_weights)
+    }
+
+    def get(point):
+        return bcs[point]
+
+    return get
+
+
+def create_virtual_boundary_based_on_fourth_derivative(length, span):
+    def p(s):
+        return Point(span * s)
+
+    def equation(w):
+        return fdm.Operator(fdm.Stencil(w)), lambda a: 0.
+
+    left_weights = {p(-2): -1., p(-1): 4., p(0): -5., p(2): 5., p(3): -4., p(4): 1.}
+    right_weights = {p(2): -1., p(1): 4., p(0): -5., p(-2): 5., p(-3): -4., p(-4): 1.}
+
+    bcs = dicttools.merge(
+        {Point(span): equation(left_weights) for span in range(-6, 0)},
+        {Point(length + span): equation(right_weights) for span in range(1, 7)},
     )
 
-    return lambda point: bcs[point]
+    def get(point):
+        return bcs[point]
+
+    return get
 
 
 def create_virtual_boundary_null_provider(*args, **kwargs):
     def get(point):
         return fdm.Stencil({}), lambda a: 0.
+
+    return get
+
+
+def create_virtual_boundary_zero_value_provider():
+    def get(point):
+        return create_statics_bc('dirichlet', value=0)
+
     return get
 
 
@@ -164,12 +491,15 @@ def create_standard_virtual_boundary_provider(strategy, length):
     def get(point):
         x = point.x - length if point.x > length else point.x
         return create_statics_bc('virtual_node', x, strategy)
+
     return get
 
 
 VIRTUAL_BOUNDARY_PROVIDER = {
     'based_on_second_derivative': create_virtual_boundary_based_on_second_derivative,
+    'based_on_fourth_derivative': create_virtual_boundary_based_on_fourth_derivative,
     'null': create_virtual_boundary_null_provider,
+    'zero_value': lambda *args: create_virtual_boundary_zero_value_provider(),
     VirtualBoundaryStrategy.SYMMETRY:
         lambda length, *args: create_standard_virtual_boundary_provider(
             VirtualBoundaryStrategy.SYMMETRY, length),
@@ -208,7 +538,7 @@ def create_mass_load_provider(length, density, field):
         elif _type == FieldType.LINEAR:
             a = props.get('a', 1.)
             b = props.get('b', 0.)
-            return -linear(point, a, b)*density(point)
+            return -linear(point, a, b) * density(point)
         else:
             raise NotImplementedError
 
@@ -239,58 +569,62 @@ class DensityController(metaclass=abc.ABCMeta):
         return self.get(point)
 
 
-SIMPLE_COMPUTING_PROCEDURE = lambda point, calculator: calculator(point)
+def calculate_directly_for_point(point, calculator):
+    return calculator(point)
 
 
 class SplineValueController(DensityController):
-    def __init__(self, length, computing_procedure=SIMPLE_COMPUTING_PROCEDURE, controllers_number=6,
-                 controllers_coordinates=None, order=3):
-        self._length = length
+    def __init__(self, points, computing_procedure=calculate_directly_for_point, order=3):
+        self._points = points
         self._computing_procedure = computing_procedure
-        self._controllers_number = controllers_number
         self._order = order
 
-        self._values = {}
-        self._control_points = controllers_coordinates or self._create_control_points()
-        assert controllers_coordinates is None or len(controllers_coordinates) == controllers_number, \
-            "'controllers_number' must equal length of 'controllers_coordinates'"
-        self._control_values = None
+        self._values = None
+        self._cached_values = {}
 
     def update_by_control_points(self, controllers_values):
-        assert self._controllers_number == len(controllers_values), \
-            "Wrong length of control points values. Should be %d" % len(self._control_points)
+        assert len(self._points) == len(controllers_values), \
+            "Wrong length of control points values. Should be %d" % len(self._points)
 
-        self._control_values = controllers_values
-        self._values = {}
-
-    def _create_control_points(self):
-        span = self._length / (self._controllers_number - 1)
-        return list(i * span for i in range(self._controllers_number))
+        self._values = controllers_values
+        self._cached_values = {}
 
     def get(self, point):
-        assert self._control_values is not None, "Initialize control points first."
-        return self._values.setdefault(point, self._computing_procedure(point, self._calculate))
+        assert self._values is not None, "Initialize control points first."
+        return self._cached_values.setdefault(point, self._computing_procedure(point, self._calculate))
 
     def _calculate(self, point):
         return float(scipy.interpolate.spline(
-            self._control_points,
-            self._control_values,
+            self._points,
+            self._values,
             [point.x],
             order=self._order
         )[0])
 
     def __len__(self):
-        return len(self._values)
+        return len(self._cached_values)
 
     def __iter__(self):
-        return iter(self._values)
+        return iter(self._cached_values)
 
 
-def create_spline_value_controller(length, points_number, **kwargs):
-    return SplineValueController(length, computing_procedure=SIMPLE_COMPUTING_PROCEDURE, **kwargs)
+def create_x_data(length, nodes_number):
+    dx = 1. / (nodes_number - 1)
+    return [dx * i * length for i in range(0, nodes_number)]
 
 
-def create_linearly_interpolated_spline_value_controller(length, points_number, **kwargs):
+def create_spline_value_controller(length, points_number, knots_number, **kwargs):
+    return SplineValueController(create_x_data(length, knots_number), **kwargs)
+
+
+def create_spline_value_controller_with_user_knots(length, points_number, coordinates, values=None, **kwargs):
+    controller = SplineValueController(coordinates, **kwargs)
+    if values is not None:
+        controller.update_by_control_points(values)
+    return controller
+
+
+def create_linearly_interpolated_spline_value_controller(length, points_number, knots_number, **kwargs):
     span = length / (points_number - 1)
 
     def compute(point, calculator):
@@ -302,11 +636,35 @@ def create_linearly_interpolated_spline_value_controller(length, points_number, 
 
         return v1 + (v2 - v1) / (x2 - x1) * (point.x - x1)
 
-    return SplineValueController(length, computing_procedure=compute, **kwargs)
+    return SplineValueController(create_x_data(length, knots_number), computing_procedure=compute, **kwargs)
+
+
+def create_segments_value_controller(length, points_number, number=10, values=(1.,)):
+    segment_length = length / number
+    segments_in_module = len(values)
+
+    tol = 1e-3
+    stiffness = []
+    for i in range(number + 1):
+        x = i * segment_length
+        si = int(math.fmod(i, segments_in_module))
+        s = values[si]
+        if i in [0, number]:
+            stiffness.append((x, s))
+        else:
+            s2 = values[int(math.fmod(i + 1, segments_in_module))]
+            xp, xn = x - tol, x + tol
+            stiffness.append((xp, s))
+            stiffness.append((xn, s2))
+
+    xs, values = zip(*stiffness)
+    controller = SplineValueController(xs, order=1)
+    controller.update_by_control_points(values)
+    return controller
 
 
 class UniformValueController(DensityController):
-    def __init__(self, value):
+    def __init__(self, length, nodes_number, value):
         self._value = value
 
     def get(self, point):
@@ -317,9 +675,9 @@ class UniformValueController(DensityController):
 
 
 class DirectValueController(DensityController):
-    def __init__(self, length, nodes_numbers, default=1.):
-        span = length/(nodes_numbers - 1)
-        points = [Point(i*span) for i in range(nodes_numbers)]
+    def __init__(self, length, points_number, default=1.):
+        span = length / (points_number - 1)
+        points = [Point(i * span) for i in range(points_number)]
         self._values = {p: default for p in points}
 
     def get(self, point):
@@ -330,8 +688,26 @@ class DirectValueController(DensityController):
         self._values.update(values)
 
 
+def create_segments_discrete_value_controller(length, points_number, number=10, values=(1.,), default=1.):
+    dx = length / (points_number - 1)
+    segment_length = length / number
+    segments_in_module = len(values)
+
+    def get_density(x):
+        if math.fabs(x - round(x / segment_length) * segment_length) < 1e-6:
+            n = round(x / segment_length)
+            segment_in_module_idx = int(math.fmod(n, segments_in_module))
+            return values[segment_in_module_idx] / dx
+        else:
+            return 1e-6
+
+    controller = DirectValueController(length, points_number, default=default)
+    controller.update({Point(dx * i): get_density(dx * i) for i in range(points_number)})
+    return controller
+
+
 class UserValueController(DensityController):
-    def __init__(self, _callable):
+    def __init__(self, length, nodes_number, _callable):
         self._callable = _callable
 
     def get(self, point):
@@ -340,9 +716,12 @@ class UserValueController(DensityController):
 
 VALUE_CONTROLLERS = {
     'spline': create_spline_value_controller,
+    'spline_with_user_knots': create_spline_value_controller_with_user_knots,
     'spline_interpolated_linearly': create_linearly_interpolated_spline_value_controller,
+    'segments': create_segments_value_controller,
     'uniform': UniformValueController,
     'direct': DirectValueController,
+    'segments_discrete': create_segments_discrete_value_controller,
     'user': UserValueController,
 }
 
@@ -352,12 +731,14 @@ def create_standard_operator_dispatcher(operators, length, span):
 
 
 def create_min_virtual_layer_operator_dispatcher(operators, length, span):
-    return fdm.DynamicElement(
-        lambda point: {
+
+    def dispatch(point):
+        return {
             Point(0. + span): operators['forward_central'],
             Point(length - span): operators['backward_central'],
         }.get(point, operators['central'])
-    )
+
+    return fdm.DynamicElement(dispatch)
 
 
 OPERATOR_DISPATCHER = {
@@ -386,48 +767,6 @@ RELATIONS = {
 }
 
 
-class StiffnessSchemeFactory:
-    def __init__(self, length, span, density_controller, context):
-        self._length = length
-        self._span = span
-        self._context = context
-
-        self._density_controller = density_controller
-        self._stiffness_stencils = self._create_stiffness_stencils()
-
-    def __call__(self, mesh):
-
-        return OPERATOR_DISPATCHER[self._context['operator_dispatcher_strategy']]\
-            (self._stiffness_stencils, self._length, self._span)
-
-    def _create_stiffness_stencils(self):
-        def get_stiffness_correction(point):
-            return self._context['stiffness_to_density_relation'](max(self._density_controller.get(point), MIN_DENSITY)) \
-                if self._context['stiffness_to_density_relation'] else 1.
-
-        return self._create_operators_set(fdm.Number(get_stiffness_correction))
-
-    def _create_operators_set(self, stiffness_multiplier):
-
-        deformation_operator = fdm.Operator(fdm.Stencil.central(span=self._span))
-        classical_operator = stiffness_multiplier * fdm.Number(self._context['young_modulus']) * deformation_operator
-        class_eq_central = fdm.Operator(fdm.Stencil.central(span=self._span), classical_operator)
-        class_eq_backward = fdm.Operator(fdm.Stencil.backward(span=self._span), classical_operator)
-        class_eq_forward = fdm.Operator(fdm.Stencil.forward(span=self._span), classical_operator)
-
-        return {
-            'central': class_eq_central,
-            'forward': class_eq_forward,
-            'backward': class_eq_backward,
-            'forward_central': class_eq_central,
-            'backward_central': class_eq_central,
-            'central_deformation_operator': deformation_operator,
-        }
-
-    def __getitem__(self, item):
-        return self._stiffness_stencils[item]
-
-
 class LoadVectorValueFactory:
     def __init__(self, length, span, density_controller, context):
         self._density_controller = density_controller
@@ -449,212 +788,5 @@ class MassSchemeFactory:
 
     def __call__(self, point):
         return fdm.Stencil(
-                    {Point(0.): self._density_controller.get(point)}
-                )
-
-
-def _create_statics_boundary(length, span, mesh, boundary, virtual_boundary_strategy, deformation_operator):
-
-    def _create_real_boundary(_deformation_operator):
-
-        bcs = []
-        boundary[Side.LEFT].type != BoundaryType.NONE and bcs.append(
-            (Point(0), statics_bc_equation_builder(Side.LEFT, boundary[Side.LEFT], span))
+            {Point(0.): self._density_controller.get(point)}
         )
-        boundary[Side.RIGHT].type != BoundaryType.NONE and bcs.append(
-            (Point(length), statics_bc_equation_builder(
-                Side.RIGHT,
-                Boundary(boundary[Side.RIGHT].type,
-                         dicttools.merge(
-                             boundary[Side.RIGHT].properties,
-                             {'operator': _deformation_operator}
-                         )
-                         ),
-                span
-                )
-            )
-        )
-        return dict(bcs)
-
-    def _create_virtual_boundary(nodes):
-        virtual_boundary_builder = VIRTUAL_BOUNDARY_PROVIDER[virtual_boundary_strategy]\
-            (length, span, boundary)
-
-        return {node: virtual_boundary_builder(node) for node in nodes}
-
-    return dicttools.merge(
-        _create_real_boundary(deformation_operator),
-        _create_virtual_boundary(mesh.virtual_nodes)
-    )
-
-
-def _create_eigenproblem_boundary(length, span, mesh, boundary, virtual_boundary_strategy, deformation_operator):
-    statics_boundary = _create_statics_boundary(length, span, mesh, boundary, virtual_boundary_strategy, deformation_operator)
-
-    def create_mass_bc_stencil(_type):
-        if _type == BoundaryType.FIXED:
-            return fdm.Stencil({})
-        else:
-            raise NotImplementedError
-
-    start, end = Point(0), Point(length)
-    left_type, right_type = boundary[Side.LEFT].type, boundary[Side.RIGHT].type
-
-    def _create_real_boundary():
-
-        bcs = []
-        left_type != BoundaryType.NONE and bcs.append(
-            (start, (statics_boundary[start].operator, create_mass_bc_stencil(left_type)))
-        )
-        right_type != BoundaryType.NONE and bcs.append(
-            (end, (statics_boundary[end].operator, create_mass_bc_stencil(right_type)))
-        )
-        return dict(bcs)
-
-    def _create_virtual_boundary(nodes):
-        return {node: (fdm.Stencil({}), fdm.Stencil({})) for node in nodes}
-
-    return dicttools.merge(
-        _create_real_boundary(),
-        _create_virtual_boundary(mesh.virtual_nodes)
-    )
-
-
-BC_BUILDERS = {
-    fdm.AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS: _create_statics_boundary,
-    fdm.AnalysisType.EIGENPROBLEM: _create_eigenproblem_boundary,
-}
-
-
-def create_template(_type, stiffness_factory, length, span, mesh, density_controller, context):
-    stiffness_stencils = stiffness_factory(length, span, density_controller, context)
-    mass_stencils = MassSchemeFactory(length, span, density_controller, context)
-    load_vector = LoadVectorValueFactory(length, span, density_controller, context)
-    all_items = stiffness_stencils, mass_stencils, load_vector
-
-    bcs = BC_BUILDERS[_type](
-        length, span, mesh, context['boundary'], context['virtual_boundary_strategy'],
-        stiffness_stencils['central_deformation_operator']
-    )
-
-    valid_items_numbers = {
-        fdm.AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS: [0, 2],
-        fdm.AnalysisType.EIGENPROBLEM: [0, 1],
-    }
-
-    items = [all_items[no] for no in valid_items_numbers[_type]]
-
-    def get_expander(point):
-        return bcs.get(point, [item(point) for item in items])
-
-    return fdm.equation.Template(get_expander)
-
-
-class Truss1d:
-    def __init__(self, length, nodes_number, stiffness_factory_builder):
-        self._length = length
-        self._nodes_number = nodes_number
-        self._stiffness_factory_builder = stiffness_factory_builder
-
-        self._span = length / (nodes_number - 1)
-
-        self._context = {
-            'analysis_type': None,
-            'left_virtual_nodes_number': 0,
-            'right_virtual_nodes_number': 0,
-            'boundary': {
-                Side.LEFT: BoundaryType.FIXED,
-                Side.RIGHT: BoundaryType.FIXED,
-            },
-            'operator_dispatcher_strategy': 'standard',
-            'virtual_boundary_strategy': 'null',
-            'field': Field(FieldType.NONE, ()),
-            'load': LoadType.NONE,
-            'stiffness_to_density_relation': None,
-            'young_modulus': 1.,
-        }
-
-        self.density_controller = VALUE_CONTROLLERS['uniform'](1.)
-
-    def set_analysis_type(self, _type):
-        self._context['analysis_type'] = fdm.analysis.AnalysisType[_type]
-        return self
-
-    def set_density_controller(self, _type, **options):
-        self.density_controller = VALUE_CONTROLLERS[_type](self._length, self._nodes_number, **options)
-        return self
-
-    def set_boundary(self, side, _type, **opts):
-        self._context['boundary'][side] = Boundary(_type, opts)
-        return self
-
-    def set_operator_dispatcher_strategy(self, strategy):
-        self._context['operator_dispatcher_strategy'] = strategy
-        return self
-
-    def set_virtual_boundary_strategy(self, _type):
-        self._context['virtual_boundary_strategy'] = _type
-        return self
-
-    def set_field(self, _type, **properties):
-        self._context['field'] = Field(_type, properties)
-        return self
-
-    def set_load(self, _type):
-        self._context['load'] = _type
-        return self
-
-    def set_stiffness_to_density_relation(self, _type, **options):
-        self._context['stiffness_to_density_relation'] = RELATIONS[_type](**options)
-        return self
-
-    def set_young_modulus(self, value_or_callable):
-        self._context['young_modulus'] = value_or_callable
-        return self
-
-    def add_virtual_nodes(self, left, right):
-        self._context['left_virtual_nodes_number'] = left
-        self._context['right_virtual_nodes_number'] = right
-        return self
-
-    def create(self):
-        assert self.density_controller is not None, "Define density controller first."
-        assert self._context['analysis_type'] is not None, "Define analysis type first."
-        mesh = self._create_mesh()
-
-        return fdm.Model(
-            self._create_template(mesh),
-            mesh,
-        )
-
-    def _create_mesh(self):
-        vn_left = [-self._span * (i + 1) for i in range(self._context['left_virtual_nodes_number'])]
-        vn_right = [self._length + self._span * (i + 1) for i in range(self._context['right_virtual_nodes_number'])]
-        return (
-            fdm.Mesh1DBuilder(self._length)
-                .add_uniformly_distributed_nodes(self._nodes_number)
-                .add_virtual_nodes(*(vn_left + vn_right))
-                .create())
-
-    def _create_template(self, mesh):
-        return create_template(
-            self._context['analysis_type'],
-            self._stiffness_factory_builder,
-            self._length, self._span, mesh, self.density_controller, self._context
-        )
-
-    @property
-    def _last_node_index(self):
-        return self._nodes_number - 1
-
-    @property
-    def density(self):
-        points = [Point(self._span*i) for i in range(self._nodes_number)]
-        return list(map(self.density_controller.get, points))
-
-    def create_density_getter(self):
-        return self.density.get
-
-
-def create(length, nodes_number):
-    return Truss1d(length, nodes_number, StiffnessSchemeFactory)
