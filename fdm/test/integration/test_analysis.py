@@ -2,6 +2,7 @@ import unittest
 import numpy as np
 
 import fdm.analysis
+import fdm.analysis.analyzer
 import fdm.builder
 
 
@@ -61,7 +62,6 @@ class Truss1dCaseStudy(unittest.TestCase):
                 .set_boundary(fdm.builder.Side.RIGHT, fdm.builder.BoundaryType.FIXED)
                 .set_load(fdm.builder.LoadType.MASS)
                 .set_field(fdm.builder.FieldType.SINUSOIDAL, n=1.)
-                .set_operator_dispatcher_strategy('minimize_virtual_layer')
                 .set_virtual_boundary_strategy('based_on_second_derivative')
                 .set_stiffness_to_density_relation('exponential', c_1=1., c_2=1.)
         )
@@ -71,7 +71,7 @@ class Truss1dCaseStudy(unittest.TestCase):
 
     @staticmethod
     def _solve(model):
-        return fdm.analysis.solve(fdm.AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS, model)
+        return fdm.analysis.solve(fdm.analysis.analyzer.AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS, model)
 
 
 class Beam1dCaseStudy(unittest.TestCase):
@@ -99,7 +99,6 @@ class Beam1dCaseStudy(unittest.TestCase):
                 .set_boundary(fdm.builder.Side.RIGHT, fdm.builder.BoundaryType.FIXED)
                 .set_load(fdm.builder.LoadType.MASS)
                 .set_field(fdm.builder.FieldType.CONSTANT, value=1.)
-                .set_operator_dispatcher_strategy('minimize_virtual_layer')
                 .set_virtual_boundary_strategy('zero_value')
         )
 
@@ -107,4 +106,4 @@ class Beam1dCaseStudy(unittest.TestCase):
 
     @staticmethod
     def _solve(model):
-        return fdm.analysis.solve(fdm.AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS, model)
+        return fdm.analysis.solve(fdm.analysis.analyzer.AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS, model)

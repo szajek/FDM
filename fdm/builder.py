@@ -7,6 +7,7 @@ import numpy as np
 import dicttools
 import scipy.interpolate
 
+import fdm.analysis.analyzer
 import fdm.builder
 import fdm.model
 import fdm
@@ -56,11 +57,55 @@ class VirtualBoundaryStrategy(enum.Enum):
     SYMMETRY = 1
 
 
+def create(type_, *args, **kwargs):
+    builder = create_builder()
+    return builder(type_, *args, **kwargs)
+
+
+def create_builder():
+    builder = Strategy()
+    builder.register('truss1d', create_for_truss_1d)
+    builder.register('beam1d', create_for_beam_1d)
+    return builder
+
+
+def create_for_truss_1d(length, nodes_number):
+
+    builder = Builder1d(length, nodes_number)
+    builder.set_stiffness_factory(create_truss1d_stiffness_operators_set)
+
+    _register_strategy(builder)
+    return builder
+
+
+def create_for_beam_1d(length, nodes_number):
+
+    builder = Builder1d(length, nodes_number)
+    builder.set_stiffness_factory(create_beam1d_stiffness_operators_set)
+
+    _register_strategy(builder)
+    return builder
+
+
+def _register_strategy(builder):
+    operator_strategy = create_operator_dispatcher_strategy()
+    virtual_eq_strategy = create_virtual_eq_strategy()
+    bcs_eq_strategy = create_bcs_eq_strategy()
+
+    builder.set_stiffness_operator_dispatcher(operator_strategy)
+    builder.set_virtual_node_equation_strategy(virtual_eq_strategy)
+    builder.set_boundary_equation_strategy(bcs_eq_strategy)
+    return builder
+
+
 class Builder1d:
     def __init__(self, length, nodes_number):
         self._length = length
         self._nodes_number = nodes_number
         self._stiffness_factory = None
+        self._stiffness_operator_strategy = None
+        self._virtual_node_equation_strategy = None
+        self._boundary_equation_strategy = None
 
         self._span = length / (nodes_number - 1)
 
@@ -72,7 +117,7 @@ class Builder1d:
                 Side.LEFT: BoundaryType.FIXED,
                 Side.RIGHT: BoundaryType.FIXED,
             },
-            'operator_dispatcher_strategy': 'standard',
+            'stiffness_operator_strategy': 'standard',
             'virtual_boundary_strategy': 'null',
             'field': Field(FieldType.NONE, ()),
             'load': LoadType.NONE,
@@ -84,6 +129,15 @@ class Builder1d:
 
     def set_stiffness_factory(self, factory):
         self._stiffness_factory = factory
+
+    def set_stiffness_operator_dispatcher(self, strategy):
+        self._stiffness_operator_strategy = strategy
+
+    def set_virtual_node_equation_strategy(self, strategy):
+        self._virtual_node_equation_strategy = strategy
+
+    def set_boundary_equation_strategy(self, strategy):
+        self._boundary_equation_strategy = strategy
 
     def set_analysis_type(self, _type):
         self._context['analysis_type'] = fdm.analysis.AnalysisType[_type]
@@ -98,7 +152,7 @@ class Builder1d:
         return self
 
     def set_operator_dispatcher_strategy(self, strategy):
-        self._context['operator_dispatcher_strategy'] = strategy
+        self._context['stiffness_operator_strategy'] = strategy
         return self
 
     def set_virtual_boundary_strategy(self, _type):
@@ -151,16 +205,21 @@ class Builder1d:
 
     def _create_template(self, mesh):
         assert self._stiffness_factory is not None, 'Set stiffness factory first'
+        assert self._stiffness_operator_strategy is not None, 'Set stiffness operator strategy first'
+        assert self._virtual_node_equation_strategy is not None, 'Set virtual node equation strategy first'
+        assert self._boundary_equation_strategy is not None, 'Set boundary equation strategy first'
+
         _type = self._context['analysis_type']
 
         stiffness_operators_set = self._create_stiffness_operators_set()
+        stiffness_stencils = self._stiffness_operator_strategy(
+            self._context['stiffness_operator_strategy'], stiffness_operators_set, self._length, self._span)
 
-        stiffness_stencils = OPERATOR_DISPATCHER[self._context['operator_dispatcher_strategy']](
-            stiffness_operators_set, self._length, self._span)
-
-        bcs = BC_BUILDERS[_type](
-            self._length, self._span, mesh, self._context['boundary'], self._context['virtual_boundary_strategy']
+        virtual_node_eq_template = self._virtual_node_equation_strategy(
+            _type, self._length, self._span, mesh, self._context['virtual_boundary_strategy']
         )
+
+        bcs_template = self._boundary_equation_strategy(_type, self._length, self._span, mesh, self._context['boundary'])
 
         if _type == fdm.AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS:
             load_vector = LoadVectorValueFactory(self._length, self._span, self.density_controller, self._context)
@@ -171,9 +230,11 @@ class Builder1d:
         else:
             raise AttributeError
 
+        first_choice_templates = dicttools.merge(virtual_node_eq_template, bcs_template)
+
         def get_expander(point):
             lhs, rhs = items
-            return bcs.get(point, [lhs, rhs(point)])
+            return first_choice_templates.get(point, [lhs, rhs(point)])
 
         return fdm.equation.Template(get_expander)
 
@@ -208,26 +269,15 @@ class Builder1d:
         return self.density.get
 
 
-def create_for_truss_1d(length, nodes_number):
-    builder = Builder1d(length, nodes_number)
-    builder.set_stiffness_factory(create_truss1d_stiffness_operators_set)
-    return builder
+class Strategy(object):
+    def __init__(self):
+        self._registry = {}
 
+    def register(self, name, strategy):
+        self._registry[name] = strategy
 
-def create_for_beam_1d(length, nodes_number):
-    builder = Builder1d(length, nodes_number)
-    builder.set_stiffness_factory(create_beam1d_stiffness_operators_set)
-    return builder
-
-
-_builders = {
-    'truss1d': create_for_truss_1d,
-    'beam1d': create_for_beam_1d
-}
-
-
-def create(type_, *args, **kwargs):
-    return _builders[type_](*args, **kwargs)
+    def __call__(self, name, *args, **kwargs):
+        return self._registry[name](*args, **kwargs)
 
 
 def create_truss1d_stiffness_operators_set(span, young_modulus_controller):
@@ -292,35 +342,29 @@ def create_beam1d_stiffness_operators_set(span, young_modulus_controller):
     }
 
 
-def _create_statics_boundary(length, span, mesh, boundary, virtual_boundary_strategy):
-    def _create_real_boundary():
-
-        bcs = []
-        if boundary[Side.LEFT].type != BoundaryType.NONE:
-            bcs.append(
-                (Point(0), statics_bc_equation_builder(Side.LEFT, boundary[Side.LEFT], span))
-            )
-
-        if boundary[Side.RIGHT].type != BoundaryType.NONE:
-            bcs.append(
-                (Point(length), statics_bc_equation_builder(Side.RIGHT, boundary[Side.RIGHT], span))
-            )
-        return dict(bcs)
-
-    def _create_virtual_boundary(nodes):
-        virtual_boundary_builder = VIRTUAL_BOUNDARY_PROVIDER[virtual_boundary_strategy] \
-            (length, span)
-
-        return {node: virtual_boundary_builder(node) for node in nodes}
-
-    return dicttools.merge(
-        _create_real_boundary(),
-        _create_virtual_boundary(mesh.virtual_nodes)
-    )
+def create_bcs_eq_strategy():
+    strategy = Strategy()
+    strategy.register(fdm.AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS, create_statics_bc_eq)
+    strategy.register(fdm.AnalysisType.EIGENPROBLEM, create_eigenproblem_bc_eq)
+    return strategy
 
 
-def _create_eigenproblem_boundary(length, span, mesh, boundary, virtual_boundary_strategy):
-    statics_boundary = _create_statics_boundary(length, span, mesh, boundary, virtual_boundary_strategy)
+def create_statics_bc_eq(length, span, mesh, boundary):
+    bcs = []
+    if boundary[Side.LEFT].type != BoundaryType.NONE:
+        bcs.append(
+            (Point(0), statics_bc_equation_builder(Side.LEFT, boundary[Side.LEFT], span))
+        )
+
+    if boundary[Side.RIGHT].type != BoundaryType.NONE:
+        bcs.append(
+            (Point(length), statics_bc_equation_builder(Side.RIGHT, boundary[Side.RIGHT], span))
+        )
+    return dict(bcs)
+
+
+def create_eigenproblem_bc_eq(length, span, mesh, boundary):
+    statics_boundary = create_statics_bc_eq(length, span, mesh, boundary)
 
     def create_mass_bc_stencil(_type):
         if _type == BoundaryType.FIXED:
@@ -331,30 +375,36 @@ def _create_eigenproblem_boundary(length, span, mesh, boundary, virtual_boundary
     start, end = Point(0), Point(length)
     left_type, right_type = boundary[Side.LEFT].type, boundary[Side.RIGHT].type
 
-    def _create_real_boundary():
+    bcs = []
+    left_type != BoundaryType.NONE and bcs.append(
+        (start, (statics_boundary[start].operator, create_mass_bc_stencil(left_type)))
+    )
+    right_type != BoundaryType.NONE and bcs.append(
+        (end, (statics_boundary[end].operator, create_mass_bc_stencil(right_type)))
+    )
+    return dict(bcs)
 
-        bcs = []
-        left_type != BoundaryType.NONE and bcs.append(
-            (start, (statics_boundary[start].operator, create_mass_bc_stencil(left_type)))
-        )
-        right_type != BoundaryType.NONE and bcs.append(
-            (end, (statics_boundary[end].operator, create_mass_bc_stencil(right_type)))
-        )
-        return dict(bcs)
 
+def create_virtual_eq_strategy():
+    strategy = Strategy()
+    strategy.register(fdm.AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS, create_statics_virtual_note_equation)
+    strategy.register(fdm.AnalysisType.EIGENPROBLEM, create_eigenproblem_virtual_note_equation)
+    return strategy
+
+
+def create_statics_virtual_note_equation(length, span, mesh, virtual_boundary_strategy):
+    def _create_virtual_boundary(nodes):
+        virtual_boundary_builder = VIRTUAL_BOUNDARY_PROVIDER[virtual_boundary_strategy](length, span)
+        return {node: virtual_boundary_builder(node) for node in nodes}
+
+    return _create_virtual_boundary(mesh.virtual_nodes)
+
+
+def create_eigenproblem_virtual_note_equation(length, span, mesh, virtual_boundary_strategy):
     def _create_virtual_boundary(nodes):
         return {node: (fdm.Stencil({}), fdm.Stencil({})) for node in nodes}
 
-    return dicttools.merge(
-        _create_real_boundary(),
-        _create_virtual_boundary(mesh.virtual_nodes)
-    )
-
-
-BC_BUILDERS = {
-    fdm.AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS: _create_statics_boundary,
-    fdm.AnalysisType.EIGENPROBLEM: _create_eigenproblem_boundary,
-}
+    return _create_virtual_boundary(mesh.virtual_nodes)
 
 
 def _create_static_dirichlet_bc(value=0.):
@@ -453,8 +503,8 @@ def create_virtual_boundary_based_on_second_derivative(length, span):
 
 
 def create_virtual_boundary_based_on_fourth_derivative(length, span):
-    def p(s):
-        return Point(span * s)
+    def p(s, base=0.):
+        return Point(base + span * s)
 
     def equation(w):
         return fdm.Operator(fdm.Stencil(w)), lambda a: 0.
@@ -463,8 +513,8 @@ def create_virtual_boundary_based_on_fourth_derivative(length, span):
     right_weights = {p(2): -1., p(1): 4., p(0): -5., p(-2): 5., p(-3): -4., p(-4): 1.}
 
     bcs = dicttools.merge(
-        {Point(span): equation(left_weights) for span in range(-6, 0)},
-        {Point(length + span): equation(right_weights) for span in range(1, 7)},
+        {p(span): equation(left_weights) for span in range(-6, 0)},
+        {p(span, base=length): equation(right_weights) for span in range(1, 7)},
     )
 
     def get(point):
@@ -726,25 +776,14 @@ VALUE_CONTROLLERS = {
 }
 
 
+def create_operator_dispatcher_strategy():
+    operators_dispatcher = Strategy()
+    operators_dispatcher.register('standard', create_standard_operator_dispatcher)
+    return operators_dispatcher
+
+
 def create_standard_operator_dispatcher(operators, length, span):
     return operators['central']
-
-
-def create_min_virtual_layer_operator_dispatcher(operators, length, span):
-
-    def dispatch(point):
-        return {
-            Point(0. + span): operators['forward_central'],
-            Point(length - span): operators['backward_central'],
-        }.get(point, operators['central'])
-
-    return fdm.DynamicElement(dispatch)
-
-
-OPERATOR_DISPATCHER = {
-    'standard': create_standard_operator_dispatcher,
-    'minimize_virtual_layer': create_min_virtual_layer_operator_dispatcher,
-}
 
 
 def exponential_relation(c_1, c_2):
@@ -790,3 +829,5 @@ class MassSchemeFactory:
         return fdm.Stencil(
             {Point(0.): self._density_controller.get(point)}
         )
+
+

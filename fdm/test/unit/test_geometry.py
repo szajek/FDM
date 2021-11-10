@@ -230,5 +230,6 @@ class ClosePointsFinderForOneDimensionTest(unittest.TestCase):
         for p in points:
             self.assertTrue(abs(expected[p] - result[p]) < tol*1.1)
 
-    def _create(self, *args, **kwargs):
+    @staticmethod
+    def _create(*args, **kwargs):
         return ClosePointsFinder(*args, **kwargs)

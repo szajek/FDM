@@ -137,16 +137,8 @@ class Scheme(collections.Mapping):
             merge_weights(*[distributor(point, factor) for point, factor in self._weights.items()])
         )
 
-
-def create_weights_distributor(close_point_finder):
-
-    def distribute(point, value):
-        close_points = close_point_finder(point)
-        distance_sum = sum(close_points.values())
-        return dict(
-            {p: (1. - distance/distance_sum)*value for p, distance in close_points.items()},
-        )
-    return distribute
+    def drop(self, tol):
+        return Stencil({point: value for point, value in self._weights.items() if abs(value) > tol})
 
 
 def operate(scheme, element):
@@ -242,7 +234,7 @@ class LazyOperation(Element):
         self._element_2 = element_2
 
     def __call__(self, *args):
-        self.expand(*args)
+        return self.expand(*args)
 
     def expand(self, *args):
         return self._operators[self._operator](
@@ -339,6 +331,9 @@ class Stencil(Element):
     def multiply(self, multiplier):
         assert isinstance(multiplier, (int, float))
         return Stencil({point: value * multiplier for point, value in self._weights.items()})
+
+    def drop(self, tol):
+        return Stencil({point: value for point, value in self._weights.items() if abs(value) > tol})
 
     def __repr__(self):
         return "{name}: {data}".format(

@@ -2,7 +2,8 @@ import unittest
 import numpy as np
 
 import fdm.builder as builder
-from fdm.analysis import solve, AnalysisType
+from fdm.analysis import solve
+from fdm.analysis.analyzer import AnalysisType
 
 
 class TrussStaticEquationFiniteDifferencesTest(unittest.TestCase):
