@@ -8,6 +8,7 @@ from fdm import Scheme
 from fdm.analysis.analyzer import (
     AnalysisType, create_linear_system_solver, create_eigenproblem_solver
 )
+from fdm.analysis.utils import create_weights_distributor
 from fdm.geometry import ClosePointsFinder
 
 
@@ -117,12 +118,3 @@ def _extract_points_from_data(expanded_data):
     )
 
 
-def create_weights_distributor(close_point_finder):
-
-    def distribute(point, value):
-        close_points = close_point_finder(point)
-        distance_sum = sum(close_points.values())
-        return dict(
-            {p: (1. - distance/distance_sum)*value for p, distance in close_points.items()},
-        )
-    return distribute
