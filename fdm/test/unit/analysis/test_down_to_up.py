@@ -1,14 +1,157 @@
 import unittest
 import numpy
+import mock
 from numpy.testing import assert_allclose
 
 from fdm.geometry import Point
-from fdm.equation import Stencil, DynamicElement, Scheme
+from fdm.equation import (
+    Stencil, DynamicElement, Scheme, Operator, Number
+)
 import fdm.analysis.down_to_up
 import fdm.analysis.analyzer
 
 
-class ArrayBuilderTest(unittest.TestCase):
+@mock.patch('fdm.analysis.down_to_up.build_array')
+class ComposeArrayTest(unittest.TestCase):
+    def test_SingleElementTemplate_Always_CallArrayBuilderWithNodesAndElement(self, mock_array_builder):
+        nodes = [Point(0.), Point(4.)]
+        n = len(nodes)
+
+        builder = self.mock_builder(size=(n, n))
+        mock_array_builder.return_value = numpy.zeros((n, n))
+
+        elements = [Stencil.central()]
+        template = [(nodes, elements)]
+
+        self._build(builder, template)
+
+        mock_array_builder.assert_called_with(builder, nodes, elements)
+
+    def test_TwoElementsTemplate_Always_CallArrayBuilderForEachElement(self, mock_array_builder):
+        nodes_1 = [Point(0.), Point(4.)]
+        nodes_2 = [Point(1.), Point(3.)]
+
+        builder = self.mock_builder(size=(5, 5))
+        mock_array_builder.return_value = numpy.zeros((5, 5))
+
+        elements_1 = [Stencil.central()]
+        elements_2 = [Stencil.backward()]
+        template = [(nodes_1, elements_1), (nodes_2, elements_2)]
+
+        self._build(builder, template)
+
+        args_1, args_2 = mock_array_builder.call_args_list
+        self.assertEqual(mock.call(builder, nodes_1, elements_1), args_1)
+        self.assertEqual(mock.call(builder, nodes_2, elements_2), args_2)
+
+    @staticmethod
+    def mock_builder(size=None):
+        builder = mock.Mock()
+        builder.size = size
+        return builder
+
+    @staticmethod
+    def _build(builder, elements):
+        return fdm.analysis.down_to_up.compose_array(builder, elements)
+
+
+class BuildArrayTest(unittest.TestCase):
+    def test_SingleElement_Always_CallBuilderApplyWithNodesAndElement(self):
+        nodes = [Point(0.), Point(4.)]
+        builder = self.mock_builder()
+        stencil = Stencil.central()
+
+        self._build(builder, nodes, [stencil])
+
+        builder.apply.assert_called_with(stencil, nodes)
+
+    def test_TwoElements_Always_CallBuilderApplyTwiceWithElementsAndNodesOnlyInLastCall(self):
+        nodes = [Point(0.), Point(4.)]
+        builder = self.mock_builder()
+        stencil_1 = Stencil.central()
+        stencil_2 = Stencil.backward()
+
+        self._build(builder, nodes, [stencil_1, stencil_2])
+
+        self.assertEqual(2, builder.apply.call_count)
+
+        args_1, args_2 = builder.apply.call_args_list
+        self.assertEqual(mock.call(stencil_1, None), args_1)
+        self.assertEqual(mock.call(stencil_2, nodes), args_2)
+
+    @staticmethod
+    def mock_builder():
+        builder = mock.Mock()
+        return builder
+
+    @staticmethod
+    def _build(builder, nodes, elements):
+        return fdm.analysis.down_to_up.build_array(builder, nodes, elements)
+
+
+class FlattenEquationTest(unittest.TestCase):
+    def test_Flatten_Stencil_ReturnListWithStencil(self):
+        stencil = Stencil.central()
+
+        actual = self._flatten(stencil)
+
+        expected = [stencil]
+
+        self.assertEqualElement(expected, actual)
+
+    def test_Flatten_StencilMultiplied_ReturnListWithTheSame(self):
+        stencil = Number(4.)*Stencil.central()
+
+        actual = self._flatten(stencil)
+
+        expected = [stencil]
+
+        self.assertEqualElement(expected, actual)
+
+    def test_Flatten_EmptyOperator_ReturnListWithOperator(self):
+        operator = Operator(Stencil.central())
+        equation = operator
+
+        actual = self._flatten(equation)
+
+        expected = [operator]
+
+        self.assertEqualElement(expected, actual)
+
+    def test_Flatten_OperatorWithElement_ReturnListWithTheSame(self):
+        operator = Operator(Stencil.central(), Number(4.))
+        equation = operator
+
+        actual = self._flatten(equation)
+
+        expected = [operator]
+
+        self.assertEqualElement(expected, actual)
+
+    @unittest.skip('under development')
+    def test_Flatten_TwoLevelOperator_ReturnListWithTwoOperatorsInCorrectOrder(self):
+        operator_1 = Operator(Stencil.backward())
+        operator_2 = Operator(Stencil.central(), operator_1)
+        equation = operator_2
+
+        actual = self._flatten(equation)
+
+        expected = [operator_1, operator_2]
+
+        self.assertEqualElement(expected, actual)
+
+    @staticmethod
+    def _flatten(equation):
+        return fdm.analysis.down_to_up.flatten_equation(equation)
+
+    def assertEqualElement(self, expected, actual):
+        for exp, act in zip(expected, actual):
+            exp_scheme = exp.expand(Point(0.))
+            act_scheme = act.expand(Point(0.))
+            self.assertEqual(exp_scheme, act_scheme)
+
+
+class MatrixBuilderTest(unittest.TestCase):
     def test_Get_DoNothing_ReturnIdentityArrayOfVariableLengthSize(self):
         points = Point(0.), Point(1.), Point(2.)
         builder = self.create(*points)
@@ -29,6 +172,42 @@ class ArrayBuilderTest(unittest.TestCase):
         expected = numpy.array(
             [
                 [5., 0., 0.],
+                [0., 5., 0.],
+                [0., 0., 5.],
+            ]
+        )
+
+        assert_allclose(expected, actual)
+
+    def test_Restore_Always_RestoreIdentityMatrix(self):
+        points = Point(0.), Point(1.), Point(2.)
+        builder = self.create(*points)
+
+        builder.apply(Stencil({Point(0.): 5}))
+        builder.restore()
+
+        actual = builder.get()
+
+        expected = numpy.array(
+            [
+                [1., 0., 0.],
+                [0., 1., 0.],
+                [0., 0., 1.],
+            ]
+        )
+
+        assert_allclose(expected, actual)
+
+    def test_ApplyStencil_NodesGiven_ApplyOnlyForGivenNodes(self):
+        points = p1, p2, p3 = Point(0.), Point(1.), Point(2.)
+        builder = self.create(*points)
+
+        builder.apply(Stencil({Point(0.): 5}), nodes=(p2, p3))
+        actual = builder.get()
+
+        expected = numpy.array(
+            [
+                [0., 0., 0.],
                 [0., 5., 0.],
                 [0., 0., 5.],
             ]
@@ -146,7 +325,64 @@ class ArrayBuilderTest(unittest.TestCase):
     @staticmethod
     def create(*points):
         variables = create_variables(*points)
-        return fdm.analysis.down_to_up.ArrayBuilder(variables or create_variables())
+        return fdm.analysis.down_to_up.MatrixBuilder(variables or create_variables())
+
+
+class VectorBuilderTest(unittest.TestCase):
+    def test_Get_DoNothing_ReturnZeroVectorOfVariableLengthSize(self):
+        points = Point(0.), Point(1.), Point(2.)
+        builder = self.create(*points)
+
+        actual = builder.get()
+
+        expected = numpy.zeros((3, 1))
+
+        assert_allclose(expected, actual)
+
+    def test_Apply_Function_ReturnArrayWithValuesComputedWithFunction(self):
+        points = Point(4.), Point(1.), Point(2.)
+        builder = self.create(*points)
+
+        def calculator(p):
+            return p.x
+
+        builder.apply(calculator)
+        actual = builder.get()
+
+        expected = numpy.array(
+            [
+                [4.],
+                [1.],
+                [2.],
+            ]
+        )
+
+        assert_allclose(expected, actual)
+
+    def test_Apply_NodesGiven_ReturnArrayWithValuesComputedForGivenPoints(self):
+        points = p1, p2, p3 = Point(4.), Point(1.), Point(2.)
+        builder = self.create(*points)
+
+        def calculator(p):
+            return p.x
+
+        builder.apply(calculator, nodes=[p2])
+        actual = builder.get()
+
+        expected = numpy.array(
+            [
+                [0.],
+                [1.],
+                [0.],
+            ]
+        )
+
+        assert_allclose(expected, actual)
+
+    @staticmethod
+    def create(*points):
+        variables = create_variables(*points)
+        return fdm.analysis.down_to_up.VectorBuilder(variables or create_variables())
 
 
 class DistributeSchemeToNodesTest(unittest.TestCase):

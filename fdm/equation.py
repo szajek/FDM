@@ -280,6 +280,10 @@ class Stencil(Element):
     __slots__ = '_weights'
 
     @classmethod
+    def null(cls):
+        return cls({})
+
+    @classmethod
     def forward(cls, span=1.):
         return cls.by_two_points(Point(0.), Point(span))
 

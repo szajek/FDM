@@ -17,19 +17,23 @@ EigenproblemEquation = collections.namedtuple('EigenproblemEquation', ('scheme_A
 
 
 def get_solvers():
-    def input_builder(equation, scheme_writers):
-        def build(model, ordered_nodes, variables):
-            equations = [equation(*data) for data in expand_template(model.template, ordered_nodes)]
-            writer = EquationWriter(*(builder(variables) for builder in scheme_writers))
-            return writer.write(*zip(*equations))
+    return {
+        AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS: create_linear_system_solver(
+            input_builder(LinearSystemEquation, (SchemeWriter, FreeValueWriter))
+        ),
+        AnalysisType.EIGENPROBLEM: create_eigenproblem_solver(
+            input_builder(EigenproblemEquation, (SchemeWriter, SchemeWriter)),
+        )}
 
-        return build
 
-    return {AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS: create_linear_system_solver(
-                    input_builder(LinearSystemEquation, (SchemeWriter, FreeValueWriter))
-                ), AnalysisType.EIGENPROBLEM: create_eigenproblem_solver(
-                    input_builder(EigenproblemEquation, (SchemeWriter, SchemeWriter)),
-                )}
+def input_builder(equation, scheme_writers):
+    def build(model, ordered_nodes, variables):
+        equations = [equation(*data) for data in expand_template(model.template, ordered_nodes)]
+        writer = EquationWriter(*(builder(variables) for builder in scheme_writers))
+        A, b = writer.write(*zip(*equations))
+        return A, b
+
+    return build
 
 
 class EquationWriter:

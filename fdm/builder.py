@@ -7,11 +7,13 @@ import numpy as np
 import dicttools
 import scipy.interpolate
 
+import fdm.analysis
 import fdm.analysis.analyzer
-import fdm.builder
 import fdm.model
 import fdm
 from fdm.geometry import Point
+from fdm.analysis import AnalysisStrategy
+
 
 MIN_DENSITY = 1e-2
 
@@ -70,29 +72,31 @@ def create_builder():
 
 
 def create_for_truss_1d(length, nodes_number):
-
     builder = Builder1d(length, nodes_number)
-    builder.set_stiffness_factory(create_truss1d_stiffness_operators_set)
+    builder.set_stiffness_factory({
+        AnalysisStrategy.UP_TO_DOWN: create_truss1d_stiffness_operators_up_to_down,
+        AnalysisStrategy.DOWN_TO_UP: create_truss1d_stiffness_operators_down_to_up,
+    })
 
     _register_strategy(builder)
     return builder
 
 
 def create_for_beam_1d(length, nodes_number):
-
     builder = Builder1d(length, nodes_number)
-    builder.set_stiffness_factory(create_beam1d_stiffness_operators_set)
+    builder.set_stiffness_factory({
+        AnalysisStrategy.UP_TO_DOWN: create_beam1d_stiffness_operators_up_to_down,
+        AnalysisStrategy.DOWN_TO_UP: create_beam1d_stiffness_operators_down_to_up,
+    })
 
     _register_strategy(builder)
     return builder
 
 
 def _register_strategy(builder):
-    operator_strategy = create_operator_dispatcher_strategy()
     virtual_eq_strategy = create_virtual_eq_strategy()
     bcs_eq_strategy = create_bcs_eq_strategy()
 
-    builder.set_stiffness_operator_dispatcher(operator_strategy)
     builder.set_virtual_node_equation_strategy(virtual_eq_strategy)
     builder.set_boundary_equation_strategy(bcs_eq_strategy)
     return builder
@@ -106,6 +110,7 @@ class Builder1d:
         self._stiffness_operator_strategy = None
         self._virtual_node_equation_strategy = None
         self._boundary_equation_strategy = None
+        self._analysis_strategy = fdm.analysis.AnalysisStrategy.UP_TO_DOWN
 
         self._span = length / (nodes_number - 1)
 
@@ -127,11 +132,12 @@ class Builder1d:
         self.density_controller = self._create_value_controller('uniform', value=1.)
         self.young_modulus_controller = self._create_value_controller('uniform', value=1.)
 
+    def set_analysis_strategy(self, strategy):
+        self._analysis_strategy = strategy
+        return self
+
     def set_stiffness_factory(self, factory):
         self._stiffness_factory = factory
-
-    def set_stiffness_operator_dispatcher(self, strategy):
-        self._stiffness_operator_strategy = strategy
 
     def set_virtual_node_equation_strategy(self, strategy):
         self._virtual_node_equation_strategy = strategy
@@ -151,7 +157,7 @@ class Builder1d:
         self._context['boundary'][side] = Boundary(_type, opts)
         return self
 
-    def set_operator_dispatcher_strategy(self, strategy):
+    def set_stiffness_operator_strategy(self, strategy):
         self._context['stiffness_operator_strategy'] = strategy
         return self
 
@@ -190,8 +196,7 @@ class Builder1d:
         mesh = self._create_mesh()
 
         return fdm.Model(
-            self._create_template(mesh),
-            mesh,
+            self._create_template(mesh), mesh, self._analysis_strategy
         )
 
     def _create_mesh(self):
@@ -205,21 +210,25 @@ class Builder1d:
 
     def _create_template(self, mesh):
         assert self._stiffness_factory is not None, 'Set stiffness factory first'
-        assert self._stiffness_operator_strategy is not None, 'Set stiffness operator strategy first'
         assert self._virtual_node_equation_strategy is not None, 'Set virtual node equation strategy first'
         assert self._boundary_equation_strategy is not None, 'Set boundary equation strategy first'
 
         _type = self._context['analysis_type']
 
-        stiffness_operators_set = self._create_stiffness_operators_set()
-        stiffness_stencils = self._stiffness_operator_strategy(
-            self._context['stiffness_operator_strategy'], stiffness_operators_set, self._length, self._span)
+        stiffness_stencils = self._create_stiffness_stencils()
 
         virtual_node_eq_template = self._virtual_node_equation_strategy(
             _type, self._length, self._span, mesh, self._context['virtual_boundary_strategy']
         )
 
         bcs_template = self._boundary_equation_strategy(_type, self._length, self._span, mesh, self._context['boundary'])
+
+        if self._analysis_strategy == fdm.analysis.AnalysisStrategy.UP_TO_DOWN:
+            creator = self._create_template_for_up_to_down
+        elif self._analysis_strategy == fdm.analysis.AnalysisStrategy.DOWN_TO_UP:
+            creator = self._create_template_for_down_to_up
+        else:
+            raise NotImplementedError
 
         if _type == fdm.AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS:
             load_vector = LoadVectorValueFactory(self._length, self._span, self.density_controller, self._context)
@@ -230,6 +239,9 @@ class Builder1d:
         else:
             raise AttributeError
 
+        return creator(mesh, items, virtual_node_eq_template, bcs_template)
+
+    def _create_template_for_up_to_down(self, mesh, items, virtual_node_eq_template, bcs_template):
         first_choice_templates = dicttools.merge(virtual_node_eq_template, bcs_template)
 
         def get_expander(point):
@@ -238,8 +250,45 @@ class Builder1d:
 
         return fdm.equation.Template(get_expander)
 
-    def _create_stiffness_operators_set(self):
-        return self._stiffness_factory(self._span, self._get_corrected_young_modulus)
+    def _create_template_for_down_to_up(self, mesh, items, virtual_node_eq_template, bcs_template):
+        def _limit_elements_to_nodes(elements, nodes):
+            def build(_element):
+                def get(p):
+                    if p in nodes:
+                        return _element
+                    else:
+                        return fdm.Stencil.null()
+
+                return get
+
+            return [fdm.DynamicElement(build(element)) for element in elements]
+
+        def limit_function_to_nodes(function, nodes):
+            def calc(p):
+                if p in nodes:
+                    return function(p)(p)
+                else:
+                    return 0.
+            return calc
+
+        bc_nodes = set(bcs_template)
+        bcs_items = [([node], [[lhs], rhs]) for node, (lhs, rhs) in bcs_template.items()]
+
+        virtual_items = [([node], [[lhs], rhs]) for node, (lhs, rhs) in virtual_node_eq_template.items()
+                         if node not in bc_nodes]
+
+        gov_eq_nodes = set(mesh.real_nodes) - bc_nodes
+        gov_eq_lhs, gov_eq_rhs = items
+        limited_gov_eq_lhs = _limit_elements_to_nodes(gov_eq_lhs, gov_eq_nodes)
+        limited_gov_eq_rhs = limit_function_to_nodes(gov_eq_rhs, gov_eq_nodes)
+        base_items = [(gov_eq_nodes, (limited_gov_eq_lhs, limited_gov_eq_rhs))]
+
+        return base_items + bcs_items + virtual_items
+
+    def _create_stiffness_stencils(self):
+        return self._stiffness_factory[self._analysis_strategy](
+            self._length, self._span, self._context['stiffness_operator_strategy'], self._get_corrected_young_modulus
+        )
 
     def _get_corrected_young_modulus(self, point):
         correction = self._context['stiffness_to_density_relation']
@@ -280,23 +329,21 @@ class Strategy(object):
         return self._registry[name](*args, **kwargs)
 
 
-def create_truss1d_stiffness_operators_set(span, young_modulus_controller):
+def create_truss1d_stiffness_operators_up_to_down(length, span, strategy, young_modulus_controller):
     deformation_operator = fdm.Operator(fdm.Stencil.central(span=span))
-    classical_operator = fdm.Number(young_modulus_controller) * deformation_operator
-    class_eq_central = fdm.Operator(fdm.Stencil.central(span=span), classical_operator)
-    class_eq_backward = fdm.Operator(fdm.Stencil.backward(span=span), classical_operator)
-    class_eq_forward = fdm.Operator(fdm.Stencil.forward(span=span), classical_operator)
-
-    return {
-        'central': class_eq_central,
-        'forward': class_eq_forward,
-        'backward': class_eq_backward,
-        'forward_central': class_eq_central,
-        'backward_central': class_eq_central,
-    }
+    classical_operator = fdm.Operator(fdm.Stencil.central(span=span), deformation_operator)
+    class_eq_central = fdm.Number(young_modulus_controller) * classical_operator
+    return class_eq_central
 
 
-def create_beam1d_stiffness_operators_set(span, young_modulus_controller):
+def create_truss1d_stiffness_operators_down_to_up(length, span, strategy, young_modulus_controller):
+    deformation_operator = fdm.Operator(fdm.Stencil.central(span=span))
+    classical_operator = fdm.Operator(fdm.Stencil.central(span=span), deformation_operator)
+    central_operator = fdm.Number(young_modulus_controller) * classical_operator
+    return [central_operator]
+
+
+def create_beam1d_stiffness_operators_up_to_down(length, span, strategy, young_modulus_controller):
     central_operator = fdm.Operator(fdm.Stencil.central(span=span))
     central_stencil = fdm.Stencil.central(span=span)
     backward_stencil = fdm.Stencil.backward(span=span)
@@ -333,13 +380,11 @@ def create_beam1d_stiffness_operators_set(span, young_modulus_controller):
         )
     )
 
-    return {
-        'central': class_eq_central,
-        'forward': class_eq_forward,
-        'backward': class_eq_backward,
-        'forward_central': class_eq_central,
-        'backward_central': class_eq_central,
-    }
+    return class_eq_central
+
+
+def create_beam1d_stiffness_operators_down_to_up(length, span, strategy, young_modulus_controller):
+    return
 
 
 def create_bcs_eq_strategy():
@@ -774,16 +819,6 @@ VALUE_CONTROLLERS = {
     'segments_discrete': create_segments_discrete_value_controller,
     'user': UserValueController,
 }
-
-
-def create_operator_dispatcher_strategy():
-    operators_dispatcher = Strategy()
-    operators_dispatcher.register('standard', create_standard_operator_dispatcher)
-    return operators_dispatcher
-
-
-def create_standard_operator_dispatcher(operators, length, span):
-    return operators['central']
 
 
 def exponential_relation(c_1, c_2):
