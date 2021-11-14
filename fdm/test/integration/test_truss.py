@@ -45,12 +45,13 @@ class TrussStaticEquationFiniteDifferencesTest(unittest.TestCase):
         result = self._solve(model)
 
         expected = np.array(
-            [[-0.],
-             [0.10912698],
-             [0.19603175],
-             [0.25793651],
-             [0.29126984],
-             [0.29126984]]
+            [[-3.92668354e-16],
+             [8.42105263e-02],
+             [1.54798762e-01],
+             [2.08132095e-01],
+             [2.38901326e-01],
+             [2.38901326e-01],
+             ]
         )
 
         np.testing.assert_allclose(expected, result, atol=1e-6)
@@ -122,16 +123,16 @@ class TrussDynamicEigenproblemEquationFiniteDifferencesTest(unittest.TestCase):
 
         expected_eigenvectors = np.array(
             [
-                [0., 0.309017, 0.587785, 0.809017, 0.951057, 1., 0.951057, 0.809017, 0.587785, 0.309017, 0.],
-                [-0., 0.618034, 1., 1., 0.618034, 0., -0.618034, -1., -1., -0.618034, -0.],
-                [-0., 0.809017, 0.951057, 0.309017, -0.587785, -1., -0.587785, 0.309017, 0.951057, 0.809017, -0.],
+                [-0.0, 0.109264, 0.209878, 0.629871, 1.0, 0.994859, 0.910958, 0.75494, 0.539156, 0.280689, -0.0],
+                [-0.0, 0.629629, 1.0, 0.793039, 0.259534, 0.0459666, -0.186528, -0.342218, -0.356995, -0.224774, -0.0],
+                [-0.0, 0.529211, 0.767237, -0.153396, -0.989627, -0.6123558, 0.101848, 0.760013, 1.0, 0.689762, -0.0],
             ]
         )
 
         expected_eigenvalues = [
-            9.7887,
-            38.19660,
-            82.4429,
+            7.9167,
+            41.1763,
+            55.0225,
         ]  # rad/s
 
         for i, (expected_value, expected_vector) in enumerate(zip(expected_eigenvalues, expected_eigenvectors)):
@@ -178,9 +179,9 @@ class SpringMassSequenceAndDynamicEigenproblemTest(unittest.TestCase):
         result = self._solve(model)
 
         expected_eigenvalues = [
-            10.307,
-            22.753,
-            327.804,
+            9.91,
+            22.407,
+            338.48,
         ]  # rad/s
 
         for i, expected_value in enumerate(expected_eigenvalues):

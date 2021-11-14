@@ -102,6 +102,11 @@ def _register_strategy(builder):
     return builder
 
 
+StiffnessInput = collections.namedtuple('StiffnessInput', (
+    'mesh', 'length', 'span', 'strategy', 'young_modulus_controller'
+))
+
+
 class Builder1d:
     def __init__(self, length, nodes_number):
         self._length = length
@@ -215,7 +220,7 @@ class Builder1d:
 
         _type = self._context['analysis_type']
 
-        stiffness_stencils = self._create_stiffness_stencils()
+        stiffness_stencils = self._create_stiffness_stencils(mesh)
 
         virtual_node_eq_template = self._virtual_node_equation_strategy(
             _type, self._length, self._span, mesh, self._context['virtual_boundary_strategy']
@@ -251,44 +256,36 @@ class Builder1d:
         return fdm.equation.Template(get_expander)
 
     def _create_template_for_down_to_up(self, mesh, items, virtual_node_eq_template, bcs_template):
-        def _limit_elements_to_nodes(elements, nodes):
-            def build(_element):
-                def get(p):
-                    if p in nodes:
-                        return _element
-                    else:
-                        return fdm.Stencil.null()
-
-                return get
-
-            return [fdm.DynamicElement(build(element)) for element in elements]
-
-        def limit_function_to_nodes(function, nodes):
-            def calc(p):
-                if p in nodes:
-                    return function(p)(p)
-                else:
-                    return 0.
-            return calc
 
         bc_nodes = set(bcs_template)
         bcs_items = [([node], [[lhs], rhs]) for node, (lhs, rhs) in bcs_template.items()]
 
+        virtual_nodes = set(virtual_node_eq_template)
         virtual_items = [([node], [[lhs], rhs]) for node, (lhs, rhs) in virtual_node_eq_template.items()
                          if node not in bc_nodes]
 
-        gov_eq_nodes = set(mesh.real_nodes) - bc_nodes
+        def rhs_caller(function):
+            def call(p):
+                if p in bc_nodes or p in virtual_nodes:
+                    return 0.
+                else:
+                    return function(p)(p)
+            return call
+
+        gov_eq_nodes = mesh.real_nodes + mesh.virtual_nodes
         gov_eq_lhs, gov_eq_rhs = items
-        limited_gov_eq_lhs = _limit_elements_to_nodes(gov_eq_lhs, gov_eq_nodes)
-        limited_gov_eq_rhs = limit_function_to_nodes(gov_eq_rhs, gov_eq_nodes)
-        base_items = [(gov_eq_nodes, (limited_gov_eq_lhs, limited_gov_eq_rhs))]
+        base_items = [(gov_eq_nodes, (gov_eq_lhs, rhs_caller(gov_eq_rhs)))]
 
-        return base_items + bcs_items + virtual_items
+        return base_items + virtual_items + bcs_items
 
-    def _create_stiffness_stencils(self):
-        return self._stiffness_factory[self._analysis_strategy](
-            self._length, self._span, self._context['stiffness_operator_strategy'], self._get_corrected_young_modulus
+    def _create_stiffness_stencils(self, mesh):
+        data = StiffnessInput(
+            mesh, self._length, self._span,
+            self._context['stiffness_operator_strategy'],
+            self._get_corrected_young_modulus,
         )
+
+        return self._stiffness_factory[self._analysis_strategy](data)
 
     def _get_corrected_young_modulus(self, point):
         correction = self._context['stiffness_to_density_relation']
@@ -329,52 +326,40 @@ class Strategy(object):
         return self._registry[name](*args, **kwargs)
 
 
-def create_truss1d_stiffness_operators_up_to_down(length, span, strategy, young_modulus_controller):
-    deformation_operator = fdm.Operator(fdm.Stencil.central(span=span))
-    classical_operator = fdm.Operator(fdm.Stencil.central(span=span), deformation_operator)
-    class_eq_central = fdm.Number(young_modulus_controller) * classical_operator
-    return class_eq_central
+def create_truss1d_stiffness_operators_up_to_down(data):
+    span = data.span
+    strains = fdm.Operator(fdm.Stencil.central(span=span))
+    stresses = fdm.Number(data.young_modulus_controller) * strains
+    stresses_derivative = fdm.Operator(fdm.Stencil.central(span=span), stresses)
+    return stresses_derivative
 
 
-def create_truss1d_stiffness_operators_down_to_up(length, span, strategy, young_modulus_controller):
-    deformation_operator = fdm.Operator(fdm.Stencil.central(span=span))
-    classical_operator = fdm.Operator(fdm.Stencil.central(span=span), deformation_operator)
-    central_operator = fdm.Number(young_modulus_controller) * classical_operator
-    return [central_operator]
+def create_truss1d_stiffness_operators_down_to_up(data):
+    span = data.span
+    length = data.length
+
+    strains = fdm.Operator(fdm.Stencil.central(span=span))
+    stresses = fdm.Number(data.young_modulus_controller) * strains
+    stresses_derivative = fdm.Operator(fdm.Stencil.central(span=span), stresses)
+
+    edge_points = {Point(0.), Point(length)}
+    real_nodes = set(data.mesh.real_nodes)
+    element_1 = limit_element(stresses_derivative, real_nodes - edge_points)
+
+    return [element_1]
 
 
-def create_beam1d_stiffness_operators_up_to_down(length, span, strategy, young_modulus_controller):
-    central_operator = fdm.Operator(fdm.Stencil.central(span=span))
+def create_beam1d_stiffness_operators_up_to_down(data):
+    span = data.span
     central_stencil = fdm.Stencil.central(span=span)
-    backward_stencil = fdm.Stencil.backward(span=span)
-    forward_stencil = fdm.Stencil.forward(span=span)
 
-    EI = fdm.Number(young_modulus_controller) * fdm.Number(1.)
+    EI = fdm.Number(data.young_modulus_controller) * fdm.Number(1.)
 
     class_eq_central = fdm.Operator(
         central_stencil, fdm.Operator(
             central_stencil, fdm.Operator(
                 central_stencil, fdm.Operator(
-                    EI * central_operator
-                )
-            )
-        )
-    )
-
-    class_eq_backward = fdm.Operator(
-        backward_stencil, fdm.Operator(
-            backward_stencil, fdm.Operator(
-                backward_stencil, fdm.Operator(
-                    EI * central_operator
-                )
-            )
-        )
-    )
-    class_eq_forward = fdm.Operator(
-        forward_stencil, fdm.Operator(
-            forward_stencil, fdm.Operator(
-                forward_stencil, fdm.Operator(
-                    EI * central_operator
+                    central_stencil, EI
                 )
             )
         )
@@ -383,8 +368,37 @@ def create_beam1d_stiffness_operators_up_to_down(length, span, strategy, young_m
     return class_eq_central
 
 
-def create_beam1d_stiffness_operators_down_to_up(length, span, strategy, young_modulus_controller):
-    return
+def create_beam1d_stiffness_operators_down_to_up(data):
+    span = data.span
+    length = data.length
+
+    central_stencil = fdm.Stencil.central(span=span)
+
+    EI = fdm.Number(data.young_modulus_controller) * fdm.Number(1.)
+
+    second_derivative = fdm.Operator(
+        central_stencil, fdm.Operator(
+            central_stencil
+        )
+    )
+
+    second_derivative_EI = fdm.Operator(
+        central_stencil, fdm.Operator(
+            central_stencil, EI
+        )
+    )
+
+    edge_points = {Point(0.), Point(length)}
+    real_nodes = set(data.mesh.real_nodes)
+    element_1 = limit_element(second_derivative_EI, data.mesh.real_nodes)
+    element_2 = limit_element(second_derivative, real_nodes - edge_points)
+    return [element_1, element_2]
+
+
+def limit_element(element, points):
+    def get(p):
+        return element if p in points else fdm.Stencil.null()
+    return fdm.DynamicElement(get)
 
 
 def create_bcs_eq_strategy():

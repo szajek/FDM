@@ -314,6 +314,44 @@ class MatrixBuilderTest(unittest.TestCase):
 
         assert_allclose(expected, actual)
 
+    def test_Apply_SecondDerivativeTwice_ReturnCorrectArray(self):
+        pm1, p0, p1, p2, p3, p4, p5 = Point(-1.), Point(0.), Point(1.), Point(2.), Point(3.), Point(4.), Point(5.)
+        builder = self.create(pm1, p0, p1, p2, p3, p4, p5)
+
+        operator = fdm.Operator(fdm.Stencil.central(span=1))
+        second_operator = fdm.Operator(fdm.Stencil.central(span=1), operator)
+
+        element_1 = self._build_dynamic_element({
+                p0: second_operator,
+                p1: second_operator,
+                p2: second_operator,
+                p3: second_operator,
+                p4: second_operator,
+            })
+        element_2 = self._build_dynamic_element({
+                p1: second_operator,
+                p2: second_operator,
+                p3: second_operator,
+            })
+
+        builder.apply(element_1)
+        builder.apply(element_2)
+        actual = builder.get()
+
+        expected = numpy.array(
+            [
+                [0., 0., 0., 0., 0., 0., 0.],
+                [0., 0., 0., 0., 0., 0., 0.],
+                [1., -4., 6., -4., 1., 0., 0.],
+                [0., 1., -4., 6., -4., 1., 0.],
+                [0., 0., 1., -4., 6., -4., 1.],
+                [0., 0., 0., 0., 0., 0., 0.],
+                [0., 0., 0., 0., 0., 0., 0.],
+            ]
+        )
+
+        assert_allclose(expected, actual)
+
     @staticmethod
     def _build_dynamic_element(data):
         null_stencil = Stencil({})

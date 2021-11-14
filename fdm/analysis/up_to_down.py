@@ -8,7 +8,7 @@ from fdm import Scheme
 from fdm.analysis.analyzer import (
     AnalysisType, create_linear_system_solver, create_eigenproblem_solver
 )
-from fdm.analysis.utils import create_weights_distributor
+from fdm.analysis.tools import create_weights_distributor
 from fdm.geometry import ClosePointsFinder
 
 

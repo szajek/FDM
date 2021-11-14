@@ -1,7 +1,7 @@
 import unittest
 
 from fdm import Point, ClosePointsFinder
-from fdm.analysis.utils import create_weights_distributor
+from fdm.analysis.tools import create_weights_distributor
 
 
 class WeightDistributorTest(unittest.TestCase):
