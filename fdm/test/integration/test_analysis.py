@@ -199,7 +199,6 @@ class Truss1dCaseStudy(unittest.TestCase):
                 .set_boundary(fdm.builder.Side.RIGHT, fdm.builder.BoundaryType.FIXED)
                 .set_load(fdm.builder.LoadType.MASS)
                 .set_field(fdm.builder.FieldType.SINUSOIDAL, n=1.)
-                .set_virtual_boundary_strategy('based_on_second_derivative')
                 .set_stiffness_to_density_relation('exponential', c_1=1., c_2=1.)
         )
         return builder
@@ -319,7 +318,6 @@ class Truss1dCaseStudy11(unittest.TestCase):
                 .set_boundary(fdm.builder.Side.RIGHT, fdm.builder.BoundaryType.FIXED)
                 .set_load(fdm.builder.LoadType.MASS)
                 .set_field(fdm.builder.FieldType.SINUSOIDAL, n=1.)
-                .set_virtual_boundary_strategy('based_on_second_derivative')
                 .set_stiffness_to_density_relation('exponential', c_1=1., c_2=1.)
         )
         return builder
@@ -363,12 +361,11 @@ class Beam1dCaseStudy(unittest.TestCase):
             fdm.builder.create('beam1d', self._length, self._node_number)
                 .set_analysis_type('SYSTEM_OF_LINEAR_EQUATIONS')
                 .set_density_controller('uniform', 1.)
-                .add_virtual_nodes(1, 1)
+                .add_virtual_nodes(8, 8)
                 .set_boundary(fdm.builder.Side.LEFT, fdm.builder.BoundaryType.FIXED)
                 .set_boundary(fdm.builder.Side.RIGHT, fdm.builder.BoundaryType.FIXED)
                 .set_load(fdm.builder.LoadType.MASS)
                 .set_field(fdm.builder.FieldType.CONSTANT, value=1.)
-                .set_virtual_boundary_strategy('zero_value')
         )
 
         return builder

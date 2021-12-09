@@ -138,7 +138,7 @@ class Scheme(collections.Mapping):
         )
 
     def drop(self, tol):
-        return Stencil({point: value for point, value in self._weights.items() if abs(value) > tol})
+        return Scheme({point: value for point, value in self._weights.items() if abs(value) > tol})
 
 
 def operate(scheme, element):

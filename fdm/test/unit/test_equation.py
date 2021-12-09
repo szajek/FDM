@@ -283,7 +283,7 @@ class SchemeTest(unittest.TestCase):
 
         result = s.drop(0.1)
 
-        expected = Stencil({Point(1.): 2.})
+        expected = Scheme({Point(1.): 2.})
 
         self.assertEqual(expected, result)
 
@@ -292,7 +292,7 @@ class SchemeTest(unittest.TestCase):
 
         result = s.drop(0.1)
 
-        expected = Stencil({Point(1.): 2.})
+        expected = Scheme({Point(1.): 2.})
 
         self.assertEqual(expected, result)
 

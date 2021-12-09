@@ -22,11 +22,11 @@ class TrussStaticEquationFiniteDifferencesTest(unittest.TestCase):
         expected = np.array(
             [
                 [0.],
-                [0.08],
-                [0.152],
-                [0.208],
-                [0.24],
-                [0.24],
+                [0.032],
+                [0.056],
+                [0.064],
+                [0.048],
+                [0.0],
             ]
         )
 
@@ -45,13 +45,14 @@ class TrussStaticEquationFiniteDifferencesTest(unittest.TestCase):
         result = self._solve(model)
 
         expected = np.array(
-            [[-3.92668354e-16],
-             [8.42105263e-02],
-             [1.54798762e-01],
-             [2.08132095e-01],
-             [2.38901326e-01],
-             [2.38901326e-01],
-             ]
+            [
+                [0.],
+                [0.04786536],
+                [0.07783252],
+                [0.08512865],
+                [0.06277802],
+                [0.]
+            ]
         )
 
         np.testing.assert_allclose(expected, result, atol=1e-6)
@@ -61,8 +62,9 @@ class TrussStaticEquationFiniteDifferencesTest(unittest.TestCase):
             builder.create('truss1d', self._length, self._node_number)
                 .set_analysis_type('SYSTEM_OF_LINEAR_EQUATIONS')
                 .set_boundary(builder.Side.LEFT, builder.BoundaryType.FIXED)
-                .set_boundary(builder.Side.RIGHT, builder.BoundaryType.FREE)
+                .set_boundary(builder.Side.RIGHT, builder.BoundaryType.FIXED)
                 .set_load(builder.LoadType.MASS)
+                .add_virtual_nodes(1, 1)
         )
 
     def _solve(self, model):
@@ -147,7 +149,7 @@ class TrussDynamicEigenproblemEquationFiniteDifferencesTest(unittest.TestCase):
                 .set_young_modulus_controller('uniform', value=1.)
                 .set_boundary(builder.Side.LEFT, builder.BoundaryType.FIXED)
                 .set_boundary(builder.Side.RIGHT, builder.BoundaryType.FIXED)
-                .set_virtual_boundary_strategy(builder.VirtualBoundaryStrategy.SYMMETRY)
+                .add_virtual_nodes(1, 1)
         )
 
     def _solve(self, model):
@@ -171,7 +173,7 @@ class SpringMassSequenceAndDynamicEigenproblemTest(unittest.TestCase):
                                         values=[1e-06, 0.03, 0.32, 0.03, 1e-06], default=1e-10)
                 .set_boundary(builder.Side.LEFT, builder.BoundaryType.FIXED)
                 .set_boundary(builder.Side.RIGHT, builder.BoundaryType.FIXED)
-                .set_virtual_boundary_strategy(builder.VirtualBoundaryStrategy.SYMMETRY)
+                .add_virtual_nodes(1, 1)
             )
 
         model = _builder.create()

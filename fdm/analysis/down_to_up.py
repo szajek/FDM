@@ -2,8 +2,10 @@ import abc
 
 import numpy
 
-from fdm.geometry import ClosePointsFinder
-from fdm.analysis.tools import create_weights_distributor
+from fdm.analysis.tools import (
+    distribute_scheme_to_nodes
+)
+
 
 from fdm.analysis.analyzer import (
     AnalysisType, create_linear_system_solver, create_eigenproblem_solver
@@ -13,11 +15,19 @@ from fdm.analysis.analyzer import (
 def get_solvers():
     return {
         AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS: create_linear_system_solver(
-            input_builder()
+            input_builder(),
         ),
         AnalysisType.EIGENPROBLEM: create_eigenproblem_solver(
             input_builder(),
         )}
+
+
+def statics_output_modifier(raw_output, nodes, variables):
+    n = len(nodes)
+    for i in range(1, n, 2):
+        prev, _, _next = raw_output[i-1:i+2]
+        raw_output[i] = (prev + _next)/2.
+    return raw_output
 
 
 def input_builder():
@@ -124,14 +134,6 @@ class MatrixBuilder(ArrayBuilder):
         if len(scheme):
             scheme = distribute_scheme_to_nodes(self._points, scheme)
         return scheme
-
-
-def distribute_scheme_to_nodes(nodes, scheme):
-    free_points = tuple(scheme)
-    distributor = create_weights_distributor(
-        ClosePointsFinder(nodes, free_points)
-    )
-    return scheme.distribute(distributor)
 
 
 def flatten_equation(equation):

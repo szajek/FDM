@@ -8,7 +8,7 @@ from fdm import Scheme
 from fdm.analysis.analyzer import (
     AnalysisType, create_linear_system_solver, create_eigenproblem_solver
 )
-from fdm.analysis.tools import create_weights_distributor
+from fdm.analysis.tools import create_weights_distributor, apply_statics_bc
 from fdm.geometry import ClosePointsFinder
 
 
@@ -28,7 +28,7 @@ def get_solvers():
 
 def input_builder(equation, scheme_writers):
     def build(model, ordered_nodes, variables):
-        equations = [equation(*data) for data in expand_template(model.template, ordered_nodes)]
+        equations = [equation(*data) for data in expand_template(model.template, model.mesh.real_nodes, ordered_nodes)]
         writer = EquationWriter(*(builder(variables) for builder in scheme_writers))
         A, b = writer.write(*zip(*equations))
         return A, b
@@ -86,10 +86,10 @@ class FreeValueWriter(Writer):
         self._counter += 1
 
 
-def expand_template(template, points):
+def expand_template(template, for_points, all_points):
     return _map_data_to_points(
-        points,
-        [template.expand(point) for point in points]
+        all_points,
+        [template.expand(point) for point in for_points]
     )
 
 

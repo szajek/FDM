@@ -3,6 +3,7 @@ import numpy
 import mock
 from numpy.testing import assert_allclose
 
+import fdm.analysis.tools
 from fdm.geometry import Point
 from fdm.equation import (
     Stencil, DynamicElement, Scheme, Operator, Number
@@ -456,7 +457,7 @@ class DistributeSchemeToNodesTest(unittest.TestCase):
 
     @staticmethod
     def _distribute(nodes, scheme):
-        return fdm.analysis.down_to_up.distribute_scheme_to_nodes(nodes, scheme)
+        return fdm.analysis.tools.distribute_scheme_to_nodes(nodes, scheme)
 
 
 def create_variables(*points):

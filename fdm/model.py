@@ -2,5 +2,5 @@ import collections
 
 __all__ = ['Model']
 
-Model = collections.namedtuple("Model", ('template', 'mesh', 'analysis_strategy'))
+Model = collections.namedtuple("Model", ('mesh', 'template', 'bcs', 'analysis_strategy'))
 
