@@ -20,8 +20,9 @@ MIN_DENSITY = 1e-2
 
 class BoundaryType(enum.Enum):
     NONE = 0
-    FIXED = 1
-    FREE = 2
+    FREE = 1
+    FIXED = 2
+    HINGE = 3
 
 
 class BoundaryScheme(enum.Enum):
