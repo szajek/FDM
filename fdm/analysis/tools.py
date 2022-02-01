@@ -1,6 +1,6 @@
 import numpy
 
-from fdm.geometry import ClosePointsFinder
+from fdm.geometry import create_close_point_finder
 
 
 def create_weights_distributor(close_point_finder):
@@ -108,7 +108,7 @@ def _rows_number(matrix):
 def distribute_scheme_to_nodes(nodes, scheme):
     free_points = tuple(scheme)
     distributor = create_weights_distributor(  # todo: optimize - it slows donw
-        ClosePointsFinder(nodes, free_points)
+        create_close_point_finder(nodes, free_points)
     )
     return scheme.distribute(distributor)
 

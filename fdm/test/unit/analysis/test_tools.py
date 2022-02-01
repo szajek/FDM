@@ -5,7 +5,7 @@ import numpy
 from numpy.testing import assert_allclose
 
 import fdm.analysis
-from fdm import Point, ClosePointsFinder, Scheme
+from fdm import Point, create_close_point_finder, Scheme
 from fdm.analysis.tools import create_weights_distributor
 from fdm.builder import static_boundary, dynamic_boundary
 
@@ -13,7 +13,7 @@ from fdm.builder import static_boundary, dynamic_boundary
 class WeightDistributorTest(unittest.TestCase):
     def test_Distribute_CoincidentWithNode_ReturnDictWithValues(self):
         points = p1, p2 = [Point(0.), Point(1.)]
-        close_point_finder = ClosePointsFinder(points, [p1])
+        close_point_finder = create_close_point_finder(points, [p1])
 
         distributor = self._create(close_point_finder)
 
@@ -26,7 +26,7 @@ class WeightDistributorTest(unittest.TestCase):
     def test_Distribute_BetweenNodes_ReturnDictWithValues(self):
         points = p1, p2 = Point(1.), Point(2.)
         middle_point = Point(1.2)
-        indexed_points = ClosePointsFinder(points, [middle_point])
+        indexed_points = create_close_point_finder(points, [middle_point])
 
         distributor = self._create(indexed_points)
 
@@ -39,7 +39,7 @@ class WeightDistributorTest(unittest.TestCase):
 
     def test_Distribute_LastNode_ReturnDictWithValues(self):
         points = p1, p2 = Point(1.), Point(2.)
-        indexed_points = ClosePointsFinder(points, [p2])
+        indexed_points = create_close_point_finder(points, [p2])
 
         distributor = self._create(indexed_points)
 

@@ -21,14 +21,12 @@ def calculate_distance(start, end):
 
 
 class Point:
-    __slots__ = 'x', 'y', 'z', '_hash'
+    __slots__ = 'x', 'y', 'z', '_coords', '_hash'
 
     _hash_pool = {}
 
     def __init__(self, x=0., y=0., z=0.):
-        self.x = x
-        self.y = y
-        self.z = z
+        self.x, self.y, self.z = self._coords = (x, y, z)
 
         self._hash = None
 
@@ -87,7 +85,7 @@ class Point:
             return False
 
     def __iter__(self):
-        return iter([self.x, self.y, self.z])
+        return iter(self._coords)
 
     def __repr__(self):
         return "Point({},{},{})".format(
@@ -171,21 +169,17 @@ def calculate_extreme_coordinates(points):
     return tuple(zip(*[(min(coords), max(coords)) for coords in zip(*map(list, points))]))
 
 
-def detect_dimension(points_coords_array):
-    for i, s in enumerate(reversed(np.sum(np.abs(points_coords_array), axis=0))):
-        if s > 0.:
-            return 3 - i
-    else:
-        return 1
+class PointBeyondDomainException(Exception):
+    pass
 
 
-def points_to_coords_array(points):
-    return np.array([list(point) for point in points])
+def create_close_point_finder(base_points, points_to_look_for, tolerance=1e-6):
+    dim = detect_dimension(points_to_coords_array(base_points))
+    return _close_point_finders[dim](base_points, points_to_look_for, tolerance)
 
 
-class ClosePointsFinder:
+class ClosePointsFinder2d:
     def __init__(self, base_points, points_to_look_for, tolerance=1e-6):
-
         assert len(points_to_look_for) > 0, "No 'look for' points are provided."
 
         self._base_points = base_points
@@ -197,37 +191,87 @@ class ClosePointsFinder:
         self._look_for_points_array = points_to_coords_array(points_to_look_for)
         self._look_for_point_to_indices = {p: i for i, p in enumerate(points_to_look_for)}
 
-        self._correct_base_point_acc_space_dimension()
         self._compute()
 
-    def _correct_base_point_acc_space_dimension(self):
-        space_dimension = detect_dimension(np.vstack((self._base_points_array, self._look_for_points_array)))
-        if space_dimension == 1:
-            add_points = self._create_virtual_base_points_for_one_dimension()
-            add_points_array = np.array([list(point) for point in add_points])
-            self._base_points_array = np.vstack((self._base_points_array, add_points_array))
-        elif space_dimension == 3:
-            raise AttributeError("3D space is not serviced yet.")
-
-    def _create_virtual_base_points_for_one_dimension(self):
-        points = list(sorted(self._base_points, key=lambda item: list(item)[0]))
-        return [Point((points[i].x + points[i+1].x)/2., 1.) for i in range(len(points)-1)]
-
     def _compute(self):
-
         self._triangle = scipy.spatial.Delaunay(self._base_points_array[:, :2])
         self._simplices = self._triangle.find_simplex(self._look_for_points_array[:, :2], tol=self._tolerance)
         self._distances = scipy.spatial.distance.cdist(self._look_for_points_array, self._base_points_array)
+
+    def __call__(self, point):
+        return self._find(point)
 
     def _find(self, point):
         look_for_idx = self._look_for_point_to_indices[point]
 
         simplex_number = self._simplices[look_for_idx]
-        assert simplex_number != -1, "Simplex has not been found for {}".format(str(point))
+        if simplex_number == -1:
+            raise PointBeyondDomainException("Simplex has not been found for {}".format(str(point)))
 
         indices = self._triangle.simplices[simplex_number]
         return {self._base_points[base_idx]: self._distances[look_for_idx][base_idx] for base_idx in indices
                 if base_idx < self._base_points_number}
 
+
+class ClosePointsFinder1d(object):
+    def __init__(self, base_points, points_to_look_for, tolerance=1e-6):
+        unsorted_xs = self._to_xs(base_points)
+
+        sorted_xs, sorted_base_points = tuple(zip(*sorted(zip(unsorted_xs, base_points))))
+        self._base_points = sorted_base_points
+        self._points_to_look_for = points_to_look_for
+        self._tolerance = tolerance
+
+        self._base_xs = np.array(sorted_xs)
+
+    @staticmethod
+    def _to_xs(points):
+        return np.array([p.x for p in points])
+
     def __call__(self, point):
-        return self._find(point)
+        x = point.x
+        point_1_idx = np.argmin(np.abs(self._base_xs - x))
+        point_1_x = self._base_xs[point_1_idx]
+        point_2_idx = self._find_second_point(point_1_idx, point_1_x, x)
+        point_2_x = self._base_xs[point_2_idx]
+        return {
+            self._base_points[point_1_idx]: abs(x - point_1_x),
+            self._base_points[point_2_idx]: abs(x - point_2_x),
+        }
+
+    def _find_second_point(self, closest_point_idx, closest_point_x, x):
+        n = len(self._base_points) - 1
+        if closest_point_idx == 0:
+            if x - closest_point_x < -self._tolerance:
+                raise PointBeyondDomainException("Point x={} beyond domain".format(str(x)))
+            else:
+                return 1
+        elif closest_point_idx == n:
+            if x - closest_point_x > self._tolerance:
+                raise PointBeyondDomainException("Point x={} beyond domain".format(str(x)))
+            else:
+                return n - 1
+        else:
+            if x - closest_point_x >= 0.:
+                return closest_point_idx + 1
+            else:
+                return closest_point_idx - 1
+
+
+_close_point_finders = {
+    1: ClosePointsFinder1d,
+    2: ClosePointsFinder2d,
+}
+
+
+def detect_dimension(points_coords_array):
+    for i, s in enumerate(reversed(np.sum(np.abs(points_coords_array), axis=0))):
+        if s > 0.:
+            return 3 - i
+    else:
+        return 1
+
+
+def points_to_coords_array(points):
+    return np.array([list(point) for point in points])
+

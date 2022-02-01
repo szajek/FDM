@@ -9,7 +9,7 @@ from fdm.analysis.analyzer import (
     AnalysisType, create_linear_system_solver, create_eigenproblem_solver
 )
 from fdm.analysis.tools import create_weights_distributor, apply_statics_bc
-from fdm.geometry import ClosePointsFinder
+from fdm.geometry import create_close_point_finder
 
 
 LinearSystemEquation = collections.namedtuple('LinearEquation', ('scheme', 'free_value'))
@@ -97,7 +97,7 @@ def _map_data_to_points(points, expanded_data):
     free_points = _extract_points_from_data(expanded_data)
 
     distributor = create_weights_distributor(
-        ClosePointsFinder(points, free_points)
+        create_close_point_finder(points, free_points)
     )
 
     def distribute(item):

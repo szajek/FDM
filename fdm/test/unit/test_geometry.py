@@ -1,9 +1,13 @@
 import unittest
-
 import numpy as np
+import mock
+from numpy.testing import assert_allclose
 
-from fdm.geometry import Point, Vector, calculate_extreme_coordinates, BoundaryBox, FreeVector, \
-    ClosePointsFinder, detect_dimension
+import fdm.geometry
+
+from fdm.geometry import (
+    Point, Vector, calculate_extreme_coordinates, BoundaryBox, FreeVector, detect_dimension
+)
 
 
 class PointTest(unittest.TestCase):
@@ -172,20 +176,56 @@ class DetectDimensionTest(unittest.TestCase):
         self.assertEqual(expected, result)
 
 
-class ClosePointsFinderForOneDimensionTest(unittest.TestCase):
+class CreateClosePointsFinderTest(unittest.TestCase):
+    def test_Points1d_Always_Return1dFinder(self):
+        points = [Point(0.,), Point(1.), Point(2.)]
+        finder = self.create(points, [Point(2.)])
 
+        self.assertIsInstance(finder, fdm.geometry.ClosePointsFinder1d)
+
+    def test_Points2d_Always_Return2dFinder(self):
+        points = [Point(0., 1.), Point(1.), Point(2.)]
+        finder = self.create(points, [Point(2.)])
+
+        self.assertIsInstance(finder, fdm.geometry.ClosePointsFinder2d)
+
+    @classmethod
+    def create(cls, finder_1d=None, finder_2d=None):
+        return fdm.geometry.create_close_point_finder(
+            finder_1d or cls.mock_finder(),
+            finder_2d or cls.mock_finder(),
+        )
+
+    @staticmethod
+    def mock_finder():
+        f = mock.Mock()
+        return f
+
+
+class ClosePointsFinder1dTest(unittest.TestCase):
     def test_Call_PointsAgree_ReturnTheClosestPointsAndDistances(self):
         points = p1, p2, p3 = [Point(0.), Point(1.), Point(3.), ]
         finder = self._create(points, [p2, Point(2.5)])
 
         result = finder(p2)
 
-        expected = {p1: 1., p2: 0.}
+        expected = {p2: 0., p3: 2.}
 
         self.assertEqual(expected, result)
 
     def test_Call_PointInHalfDistance_ReturnTheClosestPointsAndDistances(self):
         points = p1, p2, p3 = [Point(0.), Point(1.), Point(3.), ]
+        point = Point(2.)
+        finder = self._create(points, [point])
+
+        result = finder(point)
+
+        expected = {p2: 1., p3: 1.}
+
+        self.assertEqual(expected, result)
+
+    def test_Call_PointInHalfDistanceBasePointNotSorted_ReturnTheClosestPointsAndDistances(self):
+        points = p3, p1, p2 = [Point(3.), Point(0.), Point(1.), ]
         point = Point(2.)
         finder = self._create(points, [point])
 
@@ -217,19 +257,105 @@ class ClosePointsFinderForOneDimensionTest(unittest.TestCase):
 
         self.assertEqual(expected, result)
 
-    def test_Call_PointSlightlyBeyondDomainAndToleranceGiven_ReturnTheClosestPointsAndDistances(self):
-        points = p1, p2 = [Point(0.), Point(3.), ]
-        tol = 1e-6
-        to_find = Point(3. + tol)
-        finder = self._create(points, [to_find], tolerance=tol)
+    def test_Call_PointAfterLast_RaisePointBeyondDomainException(self):
+        points = [Point(0.), Point(1.)]
+        point = Point(1.1)
+        finder = self._create(points, [point], tolerance=1e-6)
 
-        result = finder(to_find)
+        with self.assertRaises(fdm.geometry.PointBeyondDomainException):
+            finder(point)
+
+    def test_Call_PointSlightlyAfterLast_ReturnTheClosestPointsAndDistances(self):
+        points = p1, p2 = [Point(0.), Point(3.), ]
+        to_find = Point(3.0001)
+        finder = self._create(points, [to_find], tolerance=1e-3)
+
+        actual = finder(to_find)
 
         expected = {p1: 3., p2: 0.}
 
-        for p in points:
-            self.assertTrue(abs(expected[p] - result[p]) < tol*1.1)
+        self.assertEqualWithTol(expected, actual, atol=1e-3)
+
+    def test_Call_PointBeforeFirst_RaisePointBeyondDomainException(self):
+        points = [Point(0.), Point(1.)]
+        point = Point(-0.1)
+        finder = self._create(points, [point], tolerance=1e-6)
+
+        with self.assertRaises(fdm.geometry.PointBeyondDomainException):
+            finder(point)
+
+    def test_Call_PointSlightlyBeforeFirst_ReturnTheClosestPointsAndDistances(self):
+        points = p1, p2 = [Point(0.), Point(3.), ]
+        to_find = Point(-0.0001)
+        finder = self._create(points, [to_find], tolerance=1e-3)
+
+        actual = finder(to_find)
+
+        expected = {p1: 3., p2: 0.}
+
+        self.assertEqualWithTol(expected, actual, atol=1e-3)
+
+    def assertEqualWithTol(self, expected, actual, atol):
+        expected_xs = self._to_xs(expected)
+        actual_xs = self._to_xs(actual)
+        assert_allclose(expected_xs, actual_xs, atol=atol)
+
+    @staticmethod
+    def _to_xs(array):
+        return [p.x for p in array]
 
     @staticmethod
     def _create(*args, **kwargs):
-        return ClosePointsFinder(*args, **kwargs)
+        return fdm.geometry.ClosePointsFinder1d(*args, **kwargs)
+
+
+class ClosePointsFinder2dTest(unittest.TestCase):
+    def test_PointAgree_Always_ReturnTheClosestPointsAndDistances(self):
+        points = p1, p2, p3 = [Point(0., 0.), Point(1., 0), Point(0., 1.), ]
+        finder = self._create(points, [p2, Point(0.5, 0.5)])
+
+        result = finder(p2)
+
+        expected = {p1: 1., p2: 0., p3: 1.4142}
+
+        self.assertEqualWithTol(expected, result)
+
+    def test_Call_PointInHalfDistance_ReturnTheClosestPointsAndDistances(self):
+        points = p1, p2, p3 = [Point(0., 0.), Point(1., 0), Point(0., 1.), ]
+        to_find = Point(0.5, 0.5)
+        finder = self._create(points, [p2, to_find])
+
+        result = finder(to_find)
+
+        expected = {p1: 0.7071, p2: 0.7071, p3: 0.7071}
+
+        self.assertEqualWithTol(expected, result)
+
+    def test_Call_PointCloserToOneNode_ReturnTheClosestPointsAndDistances(self):
+        points = p1, p2, p3 = [Point(0., 0.), Point(1., 0), Point(0., 1.), ]
+        to_find = Point(0.1, 0.1)
+        finder = self._create(points, [p2, to_find])
+
+        result = finder(to_find)
+
+        expected = {p1: 0.14142, p2: 0.9055, p3: 0.9055}
+
+        self.assertEqualWithTol(expected, result)
+
+    def assertEqualWithTol(self, expected, actual, atol=1e-3):
+        self.assertEqual(len(expected), len(actual))
+
+        def find_point_in_actual(p):
+            for act in actual:
+                if abs(p.x - act.x) < atol and abs(p.y - act.y) < atol:
+                    return act
+
+        for exp_p, exp_distance in expected.items():
+            act_p = find_point_in_actual(exp_p)
+            assert act_p is not None, 'Point {} not found in actual'.format(exp_p)
+            act_distance = actual[act_p]
+            assert_allclose(exp_distance, act_distance, atol=atol)
+
+    @staticmethod
+    def _create(*args, **kwargs):
+        return fdm.geometry.ClosePointsFinder2d(*args, **kwargs)
