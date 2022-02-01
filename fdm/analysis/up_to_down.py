@@ -94,10 +94,8 @@ def expand_template(template, for_points, all_points):
 
 
 def _map_data_to_points(points, expanded_data):
-    free_points = _extract_points_from_data(expanded_data)
-
     distributor = create_weights_distributor(
-        create_close_point_finder(points, free_points)
+        create_close_point_finder(points)
     )
 
     def distribute(item):
