@@ -173,60 +173,49 @@ class PointBeyondDomainException(Exception):
     pass
 
 
-def create_close_point_finder(base_points, points_to_look_for, tolerance=1e-6):
+def create_close_point_finder(base_points, tolerance=1e-6):
     dim = detect_dimension(points_to_coords_array(base_points))
-    return _close_point_finders[dim](base_points, points_to_look_for, tolerance)
+    return _close_point_finders[dim](base_points, tolerance)
 
 
 class ClosePointsFinder2d:
-    def __init__(self, base_points, points_to_look_for, tolerance=1e-6):
-        assert len(points_to_look_for) > 0, "No 'look for' points are provided."
-
+    def __init__(self, base_points, tolerance=1e-6):
         self._base_points = base_points
         self._base_points_number = len(base_points)
-        self._points_to_look_for = points_to_look_for
         self._tolerance = tolerance
 
         self._base_points_array = points_to_coords_array(base_points)
-        self._look_for_points_array = points_to_coords_array(points_to_look_for)
-        self._look_for_point_to_indices = {p: i for i, p in enumerate(points_to_look_for)}
 
-        self._compute()
-
-    def _compute(self):
         self._triangle = scipy.spatial.Delaunay(self._base_points_array[:, :2])
-        self._simplices = self._triangle.find_simplex(self._look_for_points_array[:, :2], tol=self._tolerance)
-        self._distances = scipy.spatial.distance.cdist(self._look_for_points_array, self._base_points_array)
 
     def __call__(self, point):
         return self._find(point)
 
     def _find(self, point):
-        look_for_idx = self._look_for_point_to_indices[point]
-
-        simplex_number = self._simplices[look_for_idx]
+        x, y, z = point
+        simplex_number = self._triangle.find_simplex(np.array([x, y]), tol=self._tolerance)
         if simplex_number == -1:
             raise PointBeyondDomainException("Simplex has not been found for {}".format(str(point)))
 
         indices = self._triangle.simplices[simplex_number]
-        return {self._base_points[base_idx]: self._distances[look_for_idx][base_idx] for base_idx in indices
+
+        return {self._base_points[base_idx]: calculate_distance(self._base_points[base_idx], point)
+                for base_idx in indices
                 if base_idx < self._base_points_number}
 
 
 class ClosePointsFinder1d(object):
-    def __init__(self, base_points, points_to_look_for, tolerance=1e-6):
-        unsorted_xs = self._to_xs(base_points)
-
-        sorted_xs, sorted_base_points = tuple(zip(*sorted(zip(unsorted_xs, base_points))))
+    def __init__(self, unsorted_base_points, tolerance=1e-6):
+        sorted_xs, sorted_base_points = self._sort_points(unsorted_base_points)
         self._base_points = sorted_base_points
-        self._points_to_look_for = points_to_look_for
         self._tolerance = tolerance
 
         self._base_xs = np.array(sorted_xs)
 
     @staticmethod
-    def _to_xs(points):
-        return np.array([p.x for p in points])
+    def _sort_points(unsorted_base_points):
+        unsorted_xs = np.array([p.x for p in unsorted_base_points])
+        return tuple(zip(*sorted(zip(unsorted_xs, unsorted_base_points))))
 
     def __call__(self, point):
         x = point.x

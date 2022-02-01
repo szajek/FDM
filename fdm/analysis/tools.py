@@ -65,7 +65,8 @@ def create_matrix_bc_applicator(matrix, points, variables, initial_size, tol=1e-
         else:
             row_idx = initial_size + bc_idx
         if len(scheme):
-            scheme = distribute_scheme_to_nodes(points, scheme)
+            distributor = SchemeToNodesDistributor(points)
+            scheme = distributor(scheme)
             scheme = scheme.drop(tol)
         for p, weight in scheme.items():
             col_idx = variables[p]
@@ -105,11 +106,11 @@ def _rows_number(matrix):
     return matrix.shape[0]
 
 
-def distribute_scheme_to_nodes(nodes, scheme):
-    free_points = tuple(scheme)
-    distributor = create_weights_distributor(  # todo: optimize - it slows donw
-        create_close_point_finder(nodes, free_points)
-    )
-    return scheme.distribute(distributor)
+class SchemeToNodesDistributor(object):
+    def __init__(self, nodes):
+        self._distributor = create_weights_distributor(
+            create_close_point_finder(nodes)
+        )
 
-
+    def __call__(self, scheme):
+        return scheme.distribute(self._distributor)

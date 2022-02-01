@@ -3,7 +3,7 @@ import abc
 import numpy
 
 from fdm.analysis.tools import (
-    distribute_scheme_to_nodes
+    SchemeToNodesDistributor
 )
 
 
@@ -71,6 +71,7 @@ class ArrayBuilder(metaclass=abc.ABCMeta):
         self.restore()
 
         self._points = tuple(variables.keys())
+        self._distributor = SchemeToNodesDistributor(self._points)
 
     @property
     def size(self):
@@ -132,7 +133,7 @@ class MatrixBuilder(ArrayBuilder):
     def _expand_scheme_for(self, point, element):
         scheme = element.expand(point)
         if len(scheme):
-            scheme = distribute_scheme_to_nodes(self._points, scheme)
+            scheme = self._distributor(scheme)
         return scheme
 
 

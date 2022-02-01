@@ -370,3 +370,42 @@ def _bc_dyn(scheme_a=None, scheme_b=None):
 
 def create_variables(*points):
     return fdm.analysis.analyzer.create_variables(points)
+
+
+class SchemeToNodesDistributorTest(unittest.TestCase):
+    def test_AllInNodes_Always_ReturnTheSame(self):
+        nodes = p1, p2, p3 = (Point(0.), Point(1.), Point(2.))
+        scheme = Scheme({p1: 1., p2: 2., p3: 3.})
+
+        distributor = self.create(nodes)
+        actual = distributor(scheme)
+
+        expected = Scheme({p1: 1., p2: 2., p3: 3.})
+
+        self.assertEqual(expected, actual)
+
+    def test_MiddleNode_AtCenter_SplitWeightToAdjacentNodes(self):
+        nodes = p1, p2 = (Point(0.), Point(1.))
+        scheme = Scheme({Point(0.5): 2.})
+
+        distributor = self.create(nodes)
+        actual = distributor(scheme)
+
+        expected = Scheme({p1: 1., p2: 1.})
+
+        self.assertEqual(expected, actual)
+
+    def test_MiddleNode_CloseToTheNode_SplitWeightProportionally(self):
+        nodes = p1, p2 = (Point(0.), Point(1.))
+        scheme = Scheme({Point(0.75): 4.})
+
+        distributor = self.create(nodes)
+        actual = distributor(scheme)
+
+        expected = Scheme({p1: 1., p2: 3.})
+
+        self.assertEqual(expected, actual)
+
+    @staticmethod
+    def create(nodes):
+        return fdm.analysis.tools.SchemeToNodesDistributor(nodes)

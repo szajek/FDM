@@ -205,7 +205,7 @@ class CreateClosePointsFinderTest(unittest.TestCase):
 class ClosePointsFinder1dTest(unittest.TestCase):
     def test_Call_PointsAgree_ReturnTheClosestPointsAndDistances(self):
         points = p1, p2, p3 = [Point(0.), Point(1.), Point(3.), ]
-        finder = self._create(points, [p2, Point(2.5)])
+        finder = self._create(points)
 
         result = finder(p2)
 
@@ -216,7 +216,7 @@ class ClosePointsFinder1dTest(unittest.TestCase):
     def test_Call_PointInHalfDistance_ReturnTheClosestPointsAndDistances(self):
         points = p1, p2, p3 = [Point(0.), Point(1.), Point(3.), ]
         point = Point(2.)
-        finder = self._create(points, [point])
+        finder = self._create(points)
 
         result = finder(point)
 
@@ -227,7 +227,7 @@ class ClosePointsFinder1dTest(unittest.TestCase):
     def test_Call_PointInHalfDistanceBasePointNotSorted_ReturnTheClosestPointsAndDistances(self):
         points = p3, p1, p2 = [Point(3.), Point(0.), Point(1.), ]
         point = Point(2.)
-        finder = self._create(points, [point])
+        finder = self._create(points)
 
         result = finder(point)
 
@@ -238,7 +238,7 @@ class ClosePointsFinder1dTest(unittest.TestCase):
     def test_Call_PointCloserToTheLeftNode_ReturnTheClosestPointsAndDistances(self):
         points = p1, p2, p3 = [Point(0.), Point(1.), Point(3.5), ]
         point = Point(1.5)
-        finder = self._create(points, [point, Point(2.5)])
+        finder = self._create(points)
 
         result = finder(point)
 
@@ -249,7 +249,7 @@ class ClosePointsFinder1dTest(unittest.TestCase):
     def test_Call_PointCloserToTheRightNode_ReturnTheClosestPointsAndDistances(self):
         points = p1, p2, p3 = [Point(0.), Point(1.), Point(3.), ]
         point = Point(2.5)
-        finder = self._create(points, [point])
+        finder = self._create(points)
 
         result = finder(point)
 
@@ -260,7 +260,7 @@ class ClosePointsFinder1dTest(unittest.TestCase):
     def test_Call_PointAfterLast_RaisePointBeyondDomainException(self):
         points = [Point(0.), Point(1.)]
         point = Point(1.1)
-        finder = self._create(points, [point], tolerance=1e-6)
+        finder = self._create(points, tolerance=1e-6)
 
         with self.assertRaises(fdm.geometry.PointBeyondDomainException):
             finder(point)
@@ -268,7 +268,7 @@ class ClosePointsFinder1dTest(unittest.TestCase):
     def test_Call_PointSlightlyAfterLast_ReturnTheClosestPointsAndDistances(self):
         points = p1, p2 = [Point(0.), Point(3.), ]
         to_find = Point(3.0001)
-        finder = self._create(points, [to_find], tolerance=1e-3)
+        finder = self._create(points, tolerance=1e-3)
 
         actual = finder(to_find)
 
@@ -279,7 +279,7 @@ class ClosePointsFinder1dTest(unittest.TestCase):
     def test_Call_PointBeforeFirst_RaisePointBeyondDomainException(self):
         points = [Point(0.), Point(1.)]
         point = Point(-0.1)
-        finder = self._create(points, [point], tolerance=1e-6)
+        finder = self._create(points, tolerance=1e-6)
 
         with self.assertRaises(fdm.geometry.PointBeyondDomainException):
             finder(point)
@@ -287,7 +287,7 @@ class ClosePointsFinder1dTest(unittest.TestCase):
     def test_Call_PointSlightlyBeforeFirst_ReturnTheClosestPointsAndDistances(self):
         points = p1, p2 = [Point(0.), Point(3.), ]
         to_find = Point(-0.0001)
-        finder = self._create(points, [to_find], tolerance=1e-3)
+        finder = self._create(points, tolerance=1e-3)
 
         actual = finder(to_find)
 
@@ -312,7 +312,7 @@ class ClosePointsFinder1dTest(unittest.TestCase):
 class ClosePointsFinder2dTest(unittest.TestCase):
     def test_PointAgree_Always_ReturnTheClosestPointsAndDistances(self):
         points = p1, p2, p3 = [Point(0., 0.), Point(1., 0), Point(0., 1.), ]
-        finder = self._create(points, [p2, Point(0.5, 0.5)])
+        finder = self._create(points)
 
         result = finder(p2)
 
@@ -323,7 +323,7 @@ class ClosePointsFinder2dTest(unittest.TestCase):
     def test_Call_PointInHalfDistance_ReturnTheClosestPointsAndDistances(self):
         points = p1, p2, p3 = [Point(0., 0.), Point(1., 0), Point(0., 1.), ]
         to_find = Point(0.5, 0.5)
-        finder = self._create(points, [p2, to_find])
+        finder = self._create(points)
 
         result = finder(to_find)
 
@@ -334,7 +334,7 @@ class ClosePointsFinder2dTest(unittest.TestCase):
     def test_Call_PointCloserToOneNode_ReturnTheClosestPointsAndDistances(self):
         points = p1, p2, p3 = [Point(0., 0.), Point(1., 0), Point(0., 1.), ]
         to_find = Point(0.1, 0.1)
-        finder = self._create(points, [p2, to_find])
+        finder = self._create(points)
 
         result = finder(to_find)
 

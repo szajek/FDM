@@ -6,7 +6,7 @@ from numpy.testing import assert_allclose
 import fdm.analysis.tools
 from fdm.geometry import Point
 from fdm.equation import (
-    Stencil, DynamicElement, Scheme, Operator, Number
+    Stencil, DynamicElement, Operator, Number
 )
 import fdm.analysis.down_to_up
 import fdm.analysis.analyzer
@@ -422,42 +422,6 @@ class VectorBuilderTest(unittest.TestCase):
     def create(*points):
         variables = create_variables(*points)
         return fdm.analysis.down_to_up.VectorBuilder(variables or create_variables())
-
-
-class DistributeSchemeToNodesTest(unittest.TestCase):
-    def test_AllInNodes_Always_ReturnTheSame(self):
-        nodes = p1, p2, p3 = (Point(0.), Point(1.), Point(2.))
-        scheme = Scheme({p1: 1., p2: 2., p3: 3.})
-
-        actual = self._distribute(nodes, scheme)
-
-        expected = Scheme({p1: 1., p2: 2., p3: 3.})
-
-        self.assertEqual(expected, actual)
-
-    def test_MiddleNode_AtCenter_SplitWeightToAdjacentNodes(self):
-        nodes = p1, p2 = (Point(0.), Point(1.))
-        scheme = Scheme({Point(0.5): 2.})
-
-        actual = self._distribute(nodes, scheme)
-
-        expected = Scheme({p1: 1., p2: 1.})
-
-        self.assertEqual(expected, actual)
-
-    def test_MiddleNode_CloseToTheNode_SplitWeightProportionally(self):
-        nodes = p1, p2 = (Point(0.), Point(1.))
-        scheme = Scheme({Point(0.75): 4.})
-
-        actual = self._distribute(nodes, scheme)
-
-        expected = Scheme({p1: 1., p2: 3.})
-
-        self.assertEqual(expected, actual)
-
-    @staticmethod
-    def _distribute(nodes, scheme):
-        return fdm.analysis.tools.distribute_scheme_to_nodes(nodes, scheme)
 
 
 def create_variables(*points):
