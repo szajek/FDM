@@ -7,7 +7,8 @@ import numpy as np
 
 from fdm.geometry import Point, FreeVector, Vector
 
-__all__ = ['Scheme', 'Element', 'Stencil', 'DynamicElement', 'LazyOperation', 'Operator', 'Number', 'Template']
+__all__ = ['Scheme', 'Element', 'Stencil', 'DynamicElement', 'CachedElement',
+           'LazyOperation', 'Operator', 'Number', 'Template']
 
 
 class MutateMixin:
@@ -204,6 +205,19 @@ class Element:
         return Stencil.from_scheme(
             self.expand(point).shift(FreeVector(-point))
         )
+
+
+class CachedElement(Element):
+    def __init__(self, element):
+        self._element = element
+
+        self._cache = {}
+
+    def expand(self, point):
+        try:
+            return self._cache[point]
+        except KeyError:
+            return self._cache.setdefault(point, self._element.expand(point))
 
 
 class DynamicElement(Element):

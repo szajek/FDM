@@ -1,5 +1,6 @@
 import math
 
+import numpy
 import numpy as np
 import scipy.spatial
 
@@ -21,14 +22,15 @@ def calculate_distance(start, end):
 
 
 class Point:
-    __slots__ = 'x', 'y', 'z', '_coords', '_hash'
+    __slots__ = 'x', 'y', 'z', '_coords', '_hash', 'index'
 
     _hash_pool = {}
 
-    def __init__(self, x=0., y=0., z=0.):
+    def __init__(self, x=0., y=0., z=0., index=None):
         self.x, self.y, self.z = self._coords = (x, y, z)
 
         self._hash = None
+        self.index = index
 
     def translate(self, vector):
         dx, dy, dz = vector.components
@@ -74,13 +76,14 @@ class Point:
 
     def _get_rounded_coords(self):
         return (
-            round(self.x, COORDS_HASH_ACCURACY),
-            round(self.y, COORDS_HASH_ACCURACY),
-            round(self.z, COORDS_HASH_ACCURACY))
+            round(self.x, COORDS_HASH_ACCURACY) if self.x != -1. else 'one',
+            round(self.y, COORDS_HASH_ACCURACY) if self.y != -1. else 'one',
+            round(self.z, COORDS_HASH_ACCURACY) if self.z != -1. else 'one'
+        )
 
     def __eq__(self, other):
         if isinstance(other, Point):
-            return all([abs(c1 - c2) < COORDS_EQ_ACCURACY for c1, c2 in zip(self, other)])
+            return hash(self) == hash(other)
         else:
             return False
 
@@ -175,7 +178,8 @@ class PointBeyondDomainException(Exception):
 
 def create_close_point_finder(base_points, tolerance=1e-6):
     dim = detect_dimension(points_to_coords_array(base_points))
-    return _close_point_finders[dim](base_points, tolerance)
+    finder = _close_point_finders[dim](base_points, tolerance)
+    return CachedClosePointFinder1d(finder)
 
 
 class ClosePointsFinder2d:
@@ -202,6 +206,19 @@ class ClosePointsFinder2d:
         return {self._base_points[base_idx]: calculate_distance(self._base_points[base_idx], point)
                 for base_idx in indices
                 if base_idx < self._base_points_number}
+
+
+class CachedClosePointFinder1d(object):
+    def __init__(self, finder):
+        self._finder = finder
+
+        self._cache = {}
+
+    def __call__(self, point):
+        try:
+            return self._cache[point]
+        except KeyError:
+            return self._cache.setdefault(point, self._finder(point))
 
 
 class ClosePointsFinder1d(object):

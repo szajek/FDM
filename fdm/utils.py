@@ -22,9 +22,9 @@ def create_cached_factory(factory, id_builder):
 
     def create(point):
         _id = id_builder(point)
-        return cache.get(_id) or cache.setdefault(
-            _id,
-            factory(point)
-        )
+        try:
+            return cache[_id]
+        except KeyError:
+            return cache.setdefault(_id, factory(point))
 
     return create

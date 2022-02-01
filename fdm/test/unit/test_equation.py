@@ -1,13 +1,17 @@
 import math
 import unittest
+import mock
 
 import numpy as np
 from mock import MagicMock
 
+import fdm.equation
 from fdm.equation import (
     LazyOperation, Operator, Stencil, DynamicElement, Scheme, Number, Element, operate, merge_weights, MutateMixin
 )
-from fdm.geometry import FreeVector, Point, Vector
+from fdm.geometry import (
+    FreeVector, Point, Vector
+)
 
 
 def _are_the_same_objects(obj, mutated):
@@ -589,6 +593,49 @@ class StencilTest(unittest.TestCase):
 
     def _compare_dict(self, d1, d2, tol=1e-4):
         return len(d1) == len(d2) and all(math.fabs(d1[k] - d2[k]) < tol for k in d1.keys())
+
+
+class CachedElementTest(unittest.TestCase):
+    def test_Expand_Always_ReturnExpandedElement(self):
+        element = self.mock_element(expanded='some-expanded-scheme')
+
+        cached = self.create(element)
+
+        actual = cached(Point(1.))
+
+        expected = 'some-expanded-scheme'
+
+        self.assertEqual(expected, actual)
+
+    def test_Expand_CalledTwiceForDifferentPoints_CallElementTwice(self):
+        element = self.mock_element()
+
+        cached = self.create(element)
+
+        cached(Point(1.))
+        cached(Point(2.))
+
+        self.assertEqual(2, element.expand.call_count)
+
+    def test_Expand_CalledTwiceForTheSamePoints_CallElementOnce(self):
+        element = self.mock_element()
+
+        cached = self.create(element)
+
+        cached(Point(1.))
+        cached(Point(1.))
+
+        self.assertEqual(1, element.expand.call_count)
+
+    @classmethod
+    def create(cls, element):
+        return fdm.equation.CachedElement(element)
+
+    @staticmethod
+    def mock_element(expanded=None):
+        e = mock.Mock()
+        e.expand.return_value = expanded
+        return e
 
 
 class DynamicElementTest(unittest.TestCase):

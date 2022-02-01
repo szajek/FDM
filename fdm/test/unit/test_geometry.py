@@ -11,7 +11,6 @@ from fdm.geometry import (
 
 
 class PointTest(unittest.TestCase):
-
     def test_Create_OnlyX_ReturnPointWithYandZasZero(self):
 
         p = Point(2.)
@@ -68,10 +67,13 @@ class PointTest(unittest.TestCase):
     def test_Hash_PointsAreTheSame_HashIsTheSame(self):
         self.assertTrue(hash(Point(1)) == hash(Point(1)))
 
+    def test_Hash_PointsAreDifferent_HashIsDifferent(self):
+        self.assertFalse(hash(Point(-1., 0.0, 0.0)) == hash(Point(-2., 0.0, 0.0)))
+
     def test_Hash_PointsInCloseDistance_HashIsTheSame(self):
         self.assertTrue(hash(Point(1 + 1e-8)) == hash(Point(1)))
 
-    def test_Hash_PointsNotCloseEnough_HashIsTheSame(self):
+    def test_Hash_PointsNotCloseEnough_HashDifferent(self):
         self.assertFalse(hash(Point(1 + 1e-7)) == hash(Point(1)))
 
 
@@ -181,19 +183,47 @@ class CreateClosePointsFinderTest(unittest.TestCase):
         points = [Point(0.,), Point(1.), Point(2.)]
         finder = self.create(points, [Point(2.)])
 
-        self.assertIsInstance(finder, fdm.geometry.ClosePointsFinder1d)
+        self.assertIsInstance(finder._finder, fdm.geometry.ClosePointsFinder1d)
 
     def test_Points2d_Always_Return2dFinder(self):
         points = [Point(0., 1.), Point(1.), Point(2.)]
         finder = self.create(points, [Point(2.)])
 
-        self.assertIsInstance(finder, fdm.geometry.ClosePointsFinder2d)
+        self.assertIsInstance(finder._finder, fdm.geometry.ClosePointsFinder2d)
 
     @classmethod
     def create(cls, finder_1d=None, finder_2d=None):
         return fdm.geometry.create_close_point_finder(
             finder_1d or cls.mock_finder(),
             finder_2d or cls.mock_finder(),
+        )
+
+
+class CachedClosePointFinderTest(unittest.TestCase):
+    def test_Find_TwiceWithVariousPoints_CallFinderTwice(self):
+        finder = self.mock_finder()
+
+        cached = self.create(finder)
+
+        cached(Point(1.))
+        cached(Point(2.))
+
+        self.assertEqual(2, finder.call_count)
+
+    def test_Find_TwiceWithTheSamePoints_CallFinderOnce(self):
+        finder = self.mock_finder()
+
+        cached = self.create(finder)
+
+        cached(Point(1.))
+        cached(Point(1.))
+
+        self.assertEqual(1, finder.call_count)
+
+    @classmethod
+    def create(cls, finder):
+        return fdm.geometry.CachedClosePointFinder1d(
+            finder or cls.mock_finder()
         )
 
     @staticmethod
