@@ -138,6 +138,7 @@ class Builder1d:
             'field': Field(FieldType.NONE, ()),
             'load': LoadType.NONE,
             'stiffness_to_density_relation': None,
+            'add_middle_nodes': False,
         }
 
         self.density_controller = self._create_value_controller('uniform', value=1.)
@@ -202,6 +203,10 @@ class Builder1d:
         self._context['right_virtual_nodes_number'] = right
         return self
 
+    def add_middle_nodes(self):
+        self._context['add_middle_nodes'] = True
+        return self
+
     def create(self):
         assert self.density_controller is not None, "Define density controller first."
         assert self.young_modulus_controller is not None, "Define Young modulus controller first."
@@ -216,11 +221,16 @@ class Builder1d:
     def _create_mesh(self):
         vn_left = [-self._span * (i + 1) for i in range(self._context['left_virtual_nodes_number'])]
         vn_right = [self._length + self._span * (i + 1) for i in range(self._context['right_virtual_nodes_number'])]
-        return (
+
+        builder = (
             fdm.Mesh1DBuilder(self._length)
-                .add_uniformly_distributed_nodes(self._nodes_number)
-                .add_virtual_nodes(*(vn_left + vn_right))
-                .create())
+            .add_uniformly_distributed_nodes(self._nodes_number)
+            .add_virtual_nodes(*(vn_left + vn_right))
+
+        )
+        if self._context['add_middle_nodes']:
+            builder.add_middle_nodes()
+        return builder.create()
 
     def _create_template(self, mesh):
         assert self._stiffness_factory is not None, 'Set stiffness factory first'
@@ -301,6 +311,10 @@ class Builder1d:
     @property
     def young_modulus(self):
         return self._revolve_for_points(self.young_modulus_controller.get)
+
+    @property
+    def moment_of_inertia(self):
+        return self._revolve_for_points(self.moment_of_inertia_controller.get)
 
     @property
     def points(self):
@@ -619,11 +633,20 @@ def calculate_directly_for_point(point, calculator):
     return calculator(point)
 
 
+class SplineExtrapolation(enum.Enum):
+    NONE = 0
+    AS_FOR_EDGE = 1
+
+
 class SplineValueController(DensityController):
-    def __init__(self, points, computing_procedure=calculate_directly_for_point, order=3):
+    def __init__(self, points, computing_procedure=calculate_directly_for_point, order=3,
+                 extrapolation=SplineExtrapolation.AS_FOR_EDGE):
         self._points = points
         self._computing_procedure = computing_procedure
         self._order = order
+        self._extrapolation = extrapolation
+
+        self._min_x, self._max_x = min(points), max(points)
 
         self._values = None
         self._cached_values = {}
@@ -640,10 +663,17 @@ class SplineValueController(DensityController):
         return self._cached_values.setdefault(point, self._computing_procedure(point, self._calculate))
 
     def _calculate(self, point):
+        x = point.x
+
+        if x < self._min_x and self._extrapolation == SplineExtrapolation.AS_FOR_EDGE:
+            x = self._min_x
+        elif x > self._max_x and self._extrapolation == SplineExtrapolation.AS_FOR_EDGE:
+            x = self._max_x
+
         return float(scipy.interpolate.spline(
             self._points,
             self._values,
-            [point.x],
+            [x],
             order=self._order
         )[0])
 

@@ -424,5 +424,78 @@ class VectorBuilderTest(unittest.TestCase):
         return fdm.analysis.down_to_up.VectorBuilder(variables or create_variables())
 
 
+class MatrixReducerTest(unittest.TestCase):
+    def test_Reduce_TheSamePoints_DoNothing(self):
+        points_from = Point(0.), Point(1.), Point(2.)
+        points_to = points_from
+        reducer = self.create(points_from, points_to)
+
+        matrix = numpy.identity(3)
+
+        actual = reducer.reduce(matrix)
+
+        expected = numpy.identity(3)
+
+        assert_allclose(expected, actual)
+
+    def test_Reduce_OneMidPoint_DistributeReducedValuesToAdjacentPoints(self):
+        points_from = Point(0.), Point(1.), Point(2.)
+        points_to = Point(0.), Point(2.)
+        reducer = self.create(points_from, points_to)
+
+        matrix = numpy.array([
+            [1., 1., 3.],
+            [4., 5., 6.],
+            [7., 8., 9.],
+        ])
+
+        actual = reducer.reduce(matrix)
+
+        expected = numpy.array([
+            [1.5, 3.5],
+            [11., 13.],
+        ])
+
+        assert_allclose(expected, actual)
+
+    def test_Reduce_OneNotMidPoint_DistributeReducedValuesToAdjacentPoints(self):
+        points_from = Point(0.), Point(1.5), Point(2.)
+        points_to = Point(0.), Point(2.)
+        reducer = self.create(points_from, points_to)
+
+        matrix = numpy.array([
+            [1., 1., 3.],
+            [4., 5., 6.],
+            [7., 8., 9.],
+        ])
+
+        actual = reducer.reduce(matrix)
+
+        expected = numpy.array([
+            [1.25, 3.75],
+            [9., 15.],
+        ])
+
+        assert_allclose(expected, actual)
+
+    def test_Reduce_VectorAndOneMidPoint_DistributeReducedValuesToAdjacentPoints(self):
+        points_from = Point(0.), Point(1.), Point(2.)
+        points_to = Point(0.), Point(2.)
+        reducer = self.create(points_from, points_to)
+
+        vector = numpy.array([1., 2., 3.])
+
+        actual = reducer.reduce(vector)
+
+        expected = numpy.array([2., 4.])
+
+        assert_allclose(expected, actual)
+
+    @staticmethod
+    def create(points_from, to_points):
+        variables = create_variables(*points_from)
+        return fdm.analysis.down_to_up.Reducer(variables, to_points)
+
+
 def create_variables(*points):
     return fdm.analysis.analyzer.create_variables(points)

@@ -317,10 +317,10 @@ class Stencil(Element):
         )
 
     @classmethod
-    def uniform(cls, point_1, point_2, resolution, weights_provider, **kwargs):
+    def uniform(cls, point_1, point_2, sections_number, weights_provider, **kwargs):
         _range = Vector(point_1, point_2).length
-        delta = _range / resolution
-        stencil_points = [point_1 + FreeVector(Point(i * delta)) for i in range(int(resolution + 1))]
+        delta = _range / sections_number
+        stencil_points = [point_1 + FreeVector(Point(i * delta)) for i in range(int(sections_number + 1))]
         return cls(
             {point: weights_provider(i, point) for i, point in enumerate(stencil_points)},
             **kwargs)

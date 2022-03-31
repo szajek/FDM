@@ -3,12 +3,12 @@ import abc
 import numpy
 
 from fdm.analysis.tools import (
-    SchemeToNodesDistributor
+    SchemeToNodesDistributor, WeightsDistributor
 )
 
 
 from fdm.analysis.analyzer import (
-    AnalysisType, create_linear_system_solver, create_eigenproblem_solver
+    AnalysisType, create_linear_system_solver, create_eigenproblem_solver, extend_variables
 )
 
 
@@ -32,6 +32,19 @@ def statics_output_modifier(raw_output, nodes, variables):
 
 def input_builder():
     def build(model, nodes, variables):
+        primary_nodes = nodes
+        additional_nodes = model.mesh.additional_nodes
+
+        extended_variables = extend_variables(variables, additional_nodes)
+
+        extended_A, extended_b = build_extended(model, extended_variables)
+        reducer = Reducer(extended_variables, primary_nodes)
+        reduced_A = reducer.reduce(extended_A)
+        reduced_b = reducer.reduce(extended_b)
+
+        return reduced_A, reduced_b
+
+    def build_extended(model, variables):
         matrix_builder = MatrixBuilder(variables)
         matrix_template = [(template_nodes, elements) for template_nodes, (elements, _) in model.template]
         A = compose_array(matrix_builder, matrix_template)
@@ -135,6 +148,55 @@ class MatrixBuilder(ArrayBuilder):
         if len(scheme):
             scheme = self._distributor(scheme)
         return scheme
+
+
+class Reducer(object):
+    def __init__(self, variables, to_points):
+        self._variables = variables
+        self._from_points = variables.keys()
+        self._to_points = to_points
+        self._to_reduce = set(self._from_points) - set(self._to_points)
+
+        self._initial_size = len(self._variables)
+        self._distributor = WeightsDistributor(self._to_points)
+
+        self._final_indices = [self._variables[point] for point in to_points]
+
+        self._modifier = None
+
+    def reduce(self, matrix):
+        modifier = self._get_modifier()
+
+        if len(matrix.shape) == 1:
+            modified = numpy.dot(matrix.T, modifier)
+            return self._reduce_vector(modified, self._final_indices)
+        elif len(matrix.shape) == 2:
+            modified = numpy.dot(matrix, modifier)
+            return self._reduce_matrix(modified, self._final_indices)
+
+    @staticmethod
+    def _reduce_vector(vector, indices):
+        return vector[indices]
+
+    @staticmethod
+    def _reduce_matrix(matrix, indices):
+        reduced = matrix[indices, :]
+        reduced = reduced[:, indices]
+        return reduced
+
+    def _get_modifier(self):
+        if self._modifier is None:
+            self._modifier = self._create_modifier()
+        return self._modifier
+
+    def _create_modifier(self):
+        modifier = numpy.identity(self._initial_size)
+        for point in self._to_reduce:
+            idx = self._variables[point]
+            weights = self._distributor(point, 1.)
+            for p, weight in weights.items():
+                modifier[idx, self._variables[p]] = weight
+        return modifier
 
 
 def flatten_equation(equation):

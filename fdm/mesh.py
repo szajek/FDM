@@ -1,4 +1,4 @@
-from .geometry import Point
+from .geometry import (Point, Vector)
 from .utils import Immutable
 
 __all__ = ['Mesh', 'Mesh1DBuilder', ]
@@ -8,9 +8,10 @@ NODE_TOLERANCE = 1e-4
 
 
 class Mesh(metaclass=Immutable):
-    def __init__(self, nodes, virtual_nodes=()):
+    def __init__(self, nodes, virtual_nodes=(), additional_nodes=()):
         self.real_nodes = tuple(nodes)
         self.virtual_nodes = tuple(virtual_nodes)
+        self.additional_nodes = tuple(additional_nodes)
 
 
 class Mesh1DBuilder:
@@ -20,6 +21,7 @@ class Mesh1DBuilder:
 
         self._nodes = []
         self._virtual_nodes = []
+        self._additional_nodes = []
 
     def add_uniformly_distributed_nodes(self, number):
         if number < 2:
@@ -41,8 +43,18 @@ class Mesh1DBuilder:
             self._virtual_nodes.append(Point(c))
         return self
 
+    def add_middle_nodes(self):
+        for i in range(len(self._nodes) - 1):
+            p1, p2 = self._nodes[i: i + 2]
+            v = Vector(p1, p2)
+            p = p1 + v*0.5
+            self._additional_nodes.append(p)
+
+        return self
+
     def create(self):
         return Mesh(
             self._nodes,
-            self._virtual_nodes
+            self._virtual_nodes,
+            self._additional_nodes
         )

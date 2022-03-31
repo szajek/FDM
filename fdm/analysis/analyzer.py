@@ -1,12 +1,15 @@
 import collections
 import enum
 
+import dicttools
 import numpy
 import numpy as np
 import scipy.linalg
+import scipy.optimize
+
 from fdm.analysis.tools import (apply_statics_bc, apply_dynamics_bc)
 
-__all__ = ['AnalysisType', 'Analyser', 'create_linear_system_solver',
+__all__ = ['AnalysisType', 'Analyser', 'create_linear_system_solver', 'extend_variables',
            'create_linear_system_solver', 'create_eigenproblem_solver']
 
 
@@ -53,8 +56,16 @@ LinearSystemResults = collections.namedtuple("LinearSystemResults", ('displaceme
 EigenproblemResults = collections.namedtuple("EigenproblemResults", ('eigenvalues', 'eigenvectors',))
 
 
-def create_variables(ordered_nodes):
-    return {p: i for i, p in enumerate(ordered_nodes)}
+def create_variables(ordered_nodes, start=0):
+    return {p: i for i, p in enumerate(ordered_nodes, start=start)}
+
+
+def extend_variables(variables, ordered_nodes):
+    start_idx = len(variables)
+    extension = create_variables(ordered_nodes, start=start_idx)
+    return dicttools.merge(
+        variables, extension
+    )
 
 
 class OrderedNodes(collections.Sequence):
@@ -84,7 +95,8 @@ def null_spy(tag, item):
 def create_linear_system_solver(input_builder, output_modifier=None):
     return Analyser(
         input_builder,
-        _solvers['scipy.sparse.linalg.spsolve'],
+        # _solvers['scipy.sparse.linalg.spsolve'],
+        _solvers['scipy.optimize.lsq_linear'],
         linear_system_output_parser,
         apply_statics_bc,
         output_modifier=output_modifier,
@@ -124,10 +136,6 @@ class Analyser:
         variables = create_variables(ordered_nodes)
 
         A, b = self._input_builder(model, ordered_nodes, variables)
-
-        real_variable_number = len(model.mesh.real_nodes)
-        A = A[:real_variable_number, :]
-        b = b[:real_variable_number]
 
         A, b = self._bc_applicator(variables, A, b, model.bcs)
 
@@ -173,10 +181,16 @@ def linear_system_solver_standard(A, b):
     return np.linalg.solve(A, b[np.newaxis].T)
 
 
+def linear_system_solver_lsq_linear(A, b):
+    r = scipy.optimize.lsq_linear(A, b)
+    return r.x[np.newaxis].T
+
+
 _solvers = {
     'numpy.linarg.solve': linear_system_solver_standard,
     'scipy.linalg.lu_solve': linear_system_solver_lu_factor,
     'scipy.sparse.linalg.spsolve': linear_system_solver_sparse,
+    'scipy.optimize.lsq_linear': linear_system_solver_lsq_linear,
 }
 
 

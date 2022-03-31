@@ -1,6 +1,7 @@
 import unittest
-
 from mock import MagicMock
+
+import fdm.analysis.analyzer
 
 from fdm import Mesh
 from fdm.analysis.analyzer import (Output, create_variables, OrderedNodes)
@@ -21,7 +22,7 @@ class CreateVariablesTest(unittest.TestCase):
 
         nodes = self._create_ordered_nodes(real_nodes)
 
-        result = create_variables(nodes)
+        result = self._create(nodes)
 
         expected = {n1: 0, n2: 1}
 
@@ -33,7 +34,7 @@ class CreateVariablesTest(unittest.TestCase):
 
         nodes = self._create_ordered_nodes(real_nodes, virtual_nodes)
 
-        result = create_variables(nodes)
+        result = self._create(nodes)
 
         expected = {n1: 0, n2: 1, v1: 2, v2: 3}
 
@@ -41,6 +42,42 @@ class CreateVariablesTest(unittest.TestCase):
 
     def _create_ordered_nodes(self, real_nodes, virtual_nodes=()):
         return real_nodes + virtual_nodes
+
+    @staticmethod
+    def _create(nodes):
+        return fdm.analysis.analyzer.create_variables(nodes)
+
+
+class ExtendVariablesTest(unittest.TestCase):
+    def test_Call_NoExtensionPoints_ReturnTheSame(self):
+        variables = self._create_variables(Point(1.), Point(2.))
+
+        nodes = ()
+
+        result = self._extend(variables, nodes)
+
+        expected = variables
+
+        self.assertEqual(expected, result)
+
+    def test_Call_OneNode_ReturnExtendedVariables(self):
+        variables = self._create_variables(Point(1.), Point(2.))
+
+        nodes = [Point(1.5)]
+
+        result = self._extend(variables, nodes)
+
+        expected = self._create_variables(Point(1.), Point(2.), Point(1.5))
+
+        self.assertEqual(expected, result)
+
+    @staticmethod
+    def _create_variables(*nodes):
+        return create_variables(nodes)
+
+    @staticmethod
+    def _extend(variables, nodes):
+        return fdm.analysis.analyzer.extend_variables(variables, nodes)
 
 
 class OutputTest(unittest.TestCase):
