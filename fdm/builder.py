@@ -3,6 +3,7 @@ import collections
 import enum
 import math
 
+import numpy
 import numpy as np
 import dicttools
 import scipy.interpolate
@@ -258,22 +259,18 @@ class Builder1d:
         return creator(mesh, stiffness_stencils, rhs)
 
     def _create_template_for_up_to_down(self, mesh, stiffness_stencils, rhs):
-
         def get_expander(point):
             return stiffness_stencils, rhs(point)
 
         return fdm.equation.Template(get_expander)
 
     def _create_template_for_down_to_up(self, mesh, stiffness_stencils, rhs):
-
         def rhs_caller(function):
             def call(p):
                 return function(p)(p)
             return call
 
-        base_items = [(mesh.real_nodes, (stiffness_stencils, rhs_caller(rhs)))]
-
-        return base_items
+        return [(mesh.real_nodes, (stiffness_stencils, rhs_caller(rhs)))]
 
     def _create_stiffness_stencils(self, mesh):
         data = StiffnessInput(
@@ -549,6 +546,7 @@ class EigenproblemEquationTemplate(fdm.Template):
 
 #
 
+
 def create_free_vector_provider_factory(length):
     def zero(point):
         return 0.
@@ -604,7 +602,7 @@ def create_point_load_provider(load, length):
     L = length
     L1 = props['ordinate']
     P = props['magnitude']
-    k1 = 100.
+    k1 = props.get('k1', 100.)
     if L1 <= 0.5:
         k2 = (L1 + 1)**(-200.) + 1.
     else:
@@ -640,11 +638,13 @@ class SplineExtrapolation(enum.Enum):
 
 class SplineValueController(DensityController):
     def __init__(self, points, computing_procedure=calculate_directly_for_point, order=3,
-                 extrapolation=SplineExtrapolation.AS_FOR_EDGE):
+                 extrapolation=SplineExtrapolation.AS_FOR_EDGE, min_value=None, max_value=None):
         self._points = points
         self._computing_procedure = computing_procedure
         self._order = order
         self._extrapolation = extrapolation
+        self._min_value = min_value
+        self._max_value = max_value
 
         self._min_x, self._max_x = min(points), max(points)
 
@@ -670,12 +670,18 @@ class SplineValueController(DensityController):
         elif x > self._max_x and self._extrapolation == SplineExtrapolation.AS_FOR_EDGE:
             x = self._max_x
 
-        return float(scipy.interpolate.spline(
-            self._points,
-            self._values,
-            [x],
-            order=self._order
-        )[0])
+        interpolator = scipy.interpolate.UnivariateSpline(
+            self._points, self._values, k=self._order, ext=1, s=0.00000000001
+        )
+        value = float(interpolator(x))
+
+        if self._min_value is not None:
+            value = max(self._min_value, value)
+
+        if self._max_value is not None:
+            value = min(self._max_value, value)
+
+        return value
 
     def __len__(self):
         return len(self._cached_values)
@@ -780,6 +786,46 @@ def create_segments_discrete_value_controller(length, points_number, number=10, 
     controller = DirectValueController(length, points_number, default=default)
     controller.update({Point(dx * i): get_density(dx * i) for i in range(points_number)})
     return controller
+
+
+class SegmentsValueController(SplineValueController):
+    def __init__(self, length, segments_number=10, segments_in_module=1):
+        self._length = length
+        self._segments_number = segments_number
+        self._segments_in_module = segments_in_module
+
+        points, _ = self._compute_knot_points([1. for _ in range(segments_in_module)])
+        SplineValueController.__init__(self, points, order=1)
+
+    def update(self, values):
+        assert len(values) == self._segments_in_module, "'Values' length must be equal segments number in module"
+        xs, values = self._compute_knot_points(values)
+
+        self.update_by_control_points(values)
+
+    def _compute_knot_points(self, values=(1.,)):
+        segment_length = self._length / self._segments_number
+        segments_in_module = len(values)
+
+        tol = 1e-3
+        stiffness = []
+        for i in range(self._segments_number + 1):
+            x = i * segment_length
+            si = int(math.fmod(i, segments_in_module))
+            s = values[si]
+            s2 = values[int(math.fmod(i - 1, segments_in_module))]
+            if i in [0]:
+                stiffness.append((x, s))
+            elif i in [self._segments_number]:
+                stiffness.append((x, s2))
+            else:
+                xp, xn = x - tol, x + tol
+                stiffness.append((xp, s2))
+                stiffness.append((xn, s))
+
+        xs, values = zip(*stiffness)
+
+        return xs, values
 
 
 class UserValueController(DensityController):

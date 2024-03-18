@@ -10,10 +10,10 @@ import scipy.optimize
 from fdm.analysis.tools import (apply_statics_bc, apply_dynamics_bc)
 
 __all__ = ['AnalysisType', 'Analyser', 'create_linear_system_solver', 'extend_variables',
-           'create_linear_system_solver', 'create_eigenproblem_solver']
+           'create_eigenproblem_solver']
 
 
-np.set_printoptions(suppress=True, linewidth=500, threshold=np.nan)
+np.set_printoptions(suppress=True, linewidth=500)
 
 
 class AnalysisType(enum.Enum):

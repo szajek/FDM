@@ -321,14 +321,14 @@ class ClosePointsFinder1dTest(unittest.TestCase):
 
         actual = finder(to_find)
 
-        expected = {p1: 3., p2: 0.}
+        expected = {p1: 0., p2: 3.}
 
         self.assertEqualWithTol(expected, actual, atol=1e-3)
 
     def assertEqualWithTol(self, expected, actual, atol):
-        expected_xs = self._to_xs(expected)
-        actual_xs = self._to_xs(actual)
-        assert_allclose(expected_xs, actual_xs, atol=atol)
+        self.assertEqual(set(expected), set(actual))
+        for key in expected:
+            assert_allclose(expected[key], actual[key], atol=atol)
 
     @staticmethod
     def _to_xs(array):
