@@ -15,10 +15,10 @@ from fdm.analysis.analyzer import (
 def get_solvers():
     return {
         AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS: create_linear_system_solver(
-            input_builder(),
+            input_builder(build_extended_load_vector),
         ),
         AnalysisType.EIGENPROBLEM: create_eigenproblem_solver(
-            input_builder(),
+            input_builder(build_extended_mass_matrix),
         )}
 
 
@@ -30,7 +30,7 @@ def statics_output_modifier(raw_output, nodes, variables):
     return raw_output
 
 
-def input_builder():
+def input_builder(rhs_builder):
     def build(model, nodes, variables):
         primary_nodes = nodes
         additional_nodes = model.mesh.additional_nodes
@@ -49,14 +49,26 @@ def input_builder():
         matrix_template = [(template_nodes, elements) for template_nodes, (elements, _) in model.template]
         A = compose_array(matrix_builder, matrix_template)
 
-        vector_builder = VectorBuilder(variables)
-        vector_template = [(template_nodes, [function]) for template_nodes, (_, function) in model.template]
-        b = compose_array(vector_builder, vector_template)
-        b = numpy.ravel(b)
+        b = rhs_builder(model, variables)
 
         return A, b
 
     return build
+
+
+def build_extended_load_vector(model, variables):
+    vector_builder = VectorBuilder(variables)
+    vector_template = [(template_nodes, [function]) for template_nodes, (_, function) in model.template]
+    b = compose_array(vector_builder, vector_template)
+    b = numpy.ravel(b)
+    return b
+
+
+def build_extended_mass_matrix(model, variables):
+    vector_builder = MatrixBuilder(variables)
+    vector_template = [(template_nodes, [function]) for template_nodes, (_, function) in model.template]
+    M = compose_array(vector_builder, vector_template)
+    return M
 
 
 def compose_array(builder, template):

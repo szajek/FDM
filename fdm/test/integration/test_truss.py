@@ -1,9 +1,14 @@
 import unittest
 import numpy as np
+from numpy.testing import assert_allclose
 
 import fdm.builder as builder
-from fdm.analysis import solve
-from fdm.analysis.analyzer import AnalysisType
+from fdm.analysis import (
+    solve, AnalysisStrategy
+)
+from fdm.analysis.analyzer import (
+    AnalysisType
+)
 
 
 class TrussStaticEquationFiniteDifferencesTest(unittest.TestCase):
@@ -17,7 +22,7 @@ class TrussStaticEquationFiniteDifferencesTest(unittest.TestCase):
                 .set_field(builder.FieldType.LINEAR, a=1.)
         ).create()
 
-        result = self._solve(model)
+        result = self.solve(model)
 
         expected = np.array(
             [
@@ -42,7 +47,7 @@ class TrussStaticEquationFiniteDifferencesTest(unittest.TestCase):
                 .set_young_modulus_controller('user', _callable=young_modulus)
         ).create()
 
-        result = self._solve(model)
+        result = self.solve(model)
 
         expected = np.array(
             [
@@ -67,7 +72,8 @@ class TrussStaticEquationFiniteDifferencesTest(unittest.TestCase):
                 .add_virtual_nodes(1, 1)
         )
 
-    def _solve(self, model):
+    @staticmethod
+    def solve(model):
         return solve(AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS, model).displacement
 
 
@@ -77,12 +83,11 @@ class TrussDynamicEigenproblemEquationFiniteDifferencesTest(unittest.TestCase):
         self._node_number = 11
 
     def test_ConstantSectionAndYoung_ReturnCorrectEigenValuesAndVectors(self):
-
         model = (
             self._create_predefined_builder()
         ).create()
 
-        result = self._solve(model)
+        result = self.solve(model)
 
         expected_eigenvectors = np.array(
             [
@@ -92,17 +97,16 @@ class TrussDynamicEigenproblemEquationFiniteDifferencesTest(unittest.TestCase):
             ]
         )
         expected_eigenvalues = [
-            9.7887,
-            38.197,
-            82.443,
+            3.1287,
+            6.1803,
+            9.0798,
         ]  # rad/s
 
         for i, (expected_value, expected_vector) in enumerate(zip(expected_eigenvalues, expected_eigenvectors)):
-            self.assertAlmostEqual(expected_value, result.eigenvalues[i], places=3)
+            assert_allclose(expected_value, result.eigenvalues[i], atol=1e-3)
             np.testing.assert_allclose(expected_vector, result.eigenvectors[i], atol=1e-6)
 
     def test_LocalSectionReduction_ReturnCorrectEigenValuesAndVectors(self):
-
         builder = self._create_predefined_builder()
         data = [
             [0., 1.],
@@ -121,7 +125,7 @@ class TrussDynamicEigenproblemEquationFiniteDifferencesTest(unittest.TestCase):
 
         model = builder.create()
 
-        result = self._solve(model)
+        result = self.solve(model)
 
         expected_eigenvectors = np.array(
             [
@@ -132,27 +136,28 @@ class TrussDynamicEigenproblemEquationFiniteDifferencesTest(unittest.TestCase):
         )
 
         expected_eigenvalues = [
-            7.9167,
-            41.1763,
-            55.0225,
+            2.814,
+            6.417,
+            7.418,
         ]  # rad/s
 
         for i, (expected_value, expected_vector) in enumerate(zip(expected_eigenvalues, expected_eigenvectors)):
-
             np.testing.assert_allclose(expected_vector, result.eigenvectors[i], atol=1e-6)
-            self.assertAlmostEqual(expected_value, result.eigenvalues[i], places=3)
+            assert_allclose(expected_value, result.eigenvalues[i], atol=1e-3)
 
     def _create_predefined_builder(self):
         return (
             builder.create('truss1d', self._length, self._node_number)
                 .set_analysis_type('EIGENPROBLEM')
+                .set_analysis_strategy(AnalysisStrategy.DOWN_TO_UP)
                 .set_young_modulus_controller('uniform', value=1.)
                 .set_boundary(builder.Side.LEFT, builder.BoundaryType.FIXED)
                 .set_boundary(builder.Side.RIGHT, builder.BoundaryType.FIXED)
                 .add_virtual_nodes(1, 1)
         )
 
-    def _solve(self, model):
+    @staticmethod
+    def solve(model):
         return solve(AnalysisType.EIGENPROBLEM, model)
 
 
@@ -162,7 +167,6 @@ class SpringMassSequenceAndDynamicEigenproblemTest(unittest.TestCase):
         self._node_number = 101
 
     def test_SectionAndMassSegments_ReturnCorrectEigenValuesAndVectors(self):
-
         segments_number = 10
 
         _builder = (
@@ -181,9 +185,9 @@ class SpringMassSequenceAndDynamicEigenproblemTest(unittest.TestCase):
         result = self._solve(model)
 
         expected_eigenvalues = [
-            9.91,
-            22.407,
-            338.48,
+            3.148,
+            4.734,
+            18.398,
         ]  # rad/s
 
         for i, expected_value in enumerate(expected_eigenvalues):

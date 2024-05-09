@@ -1,5 +1,6 @@
 import collections
 import enum
+import os
 
 import dicttools
 import numpy
@@ -7,6 +8,7 @@ import numpy as np
 import scipy.linalg
 import scipy.optimize
 
+from scipy.sparse.linalg import lobpcg
 from fdm.analysis.tools import (apply_statics_bc, apply_dynamics_bc)
 
 __all__ = ['AnalysisType', 'Analyser', 'create_linear_system_solver', 'extend_variables',
@@ -95,7 +97,6 @@ def null_spy(tag, item):
 def create_linear_system_solver(input_builder, output_modifier=None):
     return Analyser(
         input_builder,
-        # _solvers['scipy.sparse.linalg.spsolve'],
         _solvers['scipy.optimize.lsq_linear'],
         linear_system_output_parser,
         apply_statics_bc,
@@ -107,7 +108,7 @@ def create_linear_system_solver(input_builder, output_modifier=None):
 def create_eigenproblem_solver(input_builder):
     return Analyser(
         input_builder,
-        eigenproblem_solver,
+        _ep_solvers['scipy.linalg.eig'],
         eigenproblem_output_parser,
         apply_dynamics_bc,
         input_modifier=eigenproblem_input_modifier,
@@ -187,7 +188,7 @@ def linear_system_solver_lsq_linear(A, b):
 
 
 _solvers = {
-    'numpy.linarg.solve': linear_system_solver_standard,
+    'numpy.linalg.solve': linear_system_solver_standard,
     'scipy.linalg.lu_solve': linear_system_solver_lu_factor,
     'scipy.sparse.linalg.spsolve': linear_system_solver_sparse,
     'scipy.optimize.lsq_linear': linear_system_solver_lsq_linear,
@@ -211,19 +212,43 @@ def linear_system_verification(output, A, b):
 
 def eigenproblem_input_modifier(ordered_nodes, A, B):
     indices = np.ix_(ordered_nodes.indices_for_real, ordered_nodes.indices_for_real)
-    return A[indices], B[indices]
+    # return A[indices], B[indices]
+    return A, B
 
 
-def eigenproblem_solver(A, B):
+def eigenproblem_eig_solver(A, B):
     evals, evects = scipy.linalg.eig(A, b=B)
 
     idx = evals.argsort()[::-1]
     return evals[idx], evects[:, idx]
 
 
+def eigenproblem_lobpcg_solver(A, B):
+    X = scipy.rand(A.shape[0], 3)
+
+    evals, evects = lobpcg(A, X, B=B, tol=1e-8, largest=False)
+
+    idx = evals.argsort()[::-1]
+    return evals[idx], evects[:, idx]
+
+
+_ep_solvers = {
+    'scipy.sparse.linalg.lobpcg': eigenproblem_lobpcg_solver,
+    'scipy.linalg.eig': eigenproblem_eig_solver,
+}
+
+
 def eigenproblem_output_parser(row_output, variable_number, variables):
     def correct_eval(value):
-        return -value.real
+        if value.real in [np.inf, -np.inf]:
+            return
+        if not value.real:
+            return
+        if abs(value.imag) > 1e-6:
+            return
+        if value.real >= 0.:
+            return
+        return (-value.real)**0.5
 
     def are_increasing(a, b):
         return b - a > 0.
@@ -245,11 +270,12 @@ def eigenproblem_output_parser(row_output, variable_number, variables):
         return corrected if are_increasing(*corrected[:2]) else np.negative(corrected)
 
     evals, evects = row_output
+    evals = [correct_eval(ev) for ev in evals]
 
     eigenvectors = [correct_evec(evects[:, i]) for i in range(evects.shape[1])]
 
-    converted = [(correct_eval(eval), Output(evec, variable_number, variables))
-                 for eval, evec in zip(evals, eigenvectors) if eval.real not in [np.inf, -np.inf]]
+    converted = [(ev, Output(evec, variable_number, variables))
+                 for ev, evec in zip(evals, eigenvectors) if ev is not None]
 
     return EigenproblemResults(*zip(*converted))
 

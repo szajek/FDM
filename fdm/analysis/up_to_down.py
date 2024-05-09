@@ -8,12 +8,15 @@ from fdm import Scheme
 from fdm.analysis.analyzer import (
     AnalysisType, create_linear_system_solver, create_eigenproblem_solver
 )
-from fdm.analysis.tools import create_weights_distributor, apply_statics_bc
+from fdm.analysis.tools import create_weights_distributor
 from fdm.geometry import create_close_point_finder
 
-
-LinearSystemEquation = collections.namedtuple('LinearEquation', ('scheme', 'free_value'))
-EigenproblemEquation = collections.namedtuple('EigenproblemEquation', ('scheme_A', 'scheme_B'))
+LinearSystemEquation = collections.namedtuple(
+    'LinearEquation', ('scheme', 'free_value')
+)
+EigenproblemEquation = collections.namedtuple(
+    'EigenproblemEquation', ('scheme_A', 'scheme_B')
+)
 
 
 def get_solvers():
@@ -118,5 +121,3 @@ def _extract_points_from_data(expanded_data):
             )
         )
     )
-
-

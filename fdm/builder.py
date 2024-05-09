@@ -91,6 +91,7 @@ def create_for_truss_1d(length, nodes_number):
         AnalysisStrategy.UP_TO_DOWN: create_truss1d_stiffness_operators_up_to_down,
         AnalysisStrategy.DOWN_TO_UP: create_truss1d_stiffness_operators_down_to_up,
     })
+    builder.set_mass_factory(create_truss1d_mass_operator)
     builder.set_complex_boundary_factory(create_complex_truss_bcs())
     return builder
 
@@ -101,12 +102,18 @@ def create_for_beam_1d(length, nodes_number):
         AnalysisStrategy.UP_TO_DOWN: create_beam1d_stiffness_operators_up_to_down,
         AnalysisStrategy.DOWN_TO_UP: create_beam1d_stiffness_operators_down_to_up,
     })
+    builder.set_mass_factory(create_beam1d_mass_operator)
     builder.set_complex_boundary_factory(create_complex_beam_bcs())
     return builder
 
 
 StiffnessInput = collections.namedtuple('StiffnessInput', (
     'mesh', 'length', 'span', 'strategy', 'young_modulus_controller', 'moment_of_inertia_controller'
+))
+
+
+MassInput = collections.namedtuple('MassInput', (
+    'density_controller',
 ))
 
 
@@ -121,6 +128,7 @@ class Builder1d:
         self._nodes_number = nodes_number
         self._stiffness_factory = None
         self._stiffness_operator_strategy = None
+        self._mass_factory = None
         self._complex_boundary_factory = null_complex_boundary_factory
         self._analysis_strategy = fdm.analysis.AnalysisStrategy.UP_TO_DOWN
 
@@ -152,6 +160,9 @@ class Builder1d:
 
     def set_stiffness_factory(self, factory):
         self._stiffness_factory = factory
+
+    def set_mass_factory(self, factory):
+        self._mass_factory = factory
 
     def set_complex_boundary_factory(self, factory):
         self._complex_boundary_factory = factory
@@ -235,10 +246,9 @@ class Builder1d:
 
     def _create_template(self, mesh):
         assert self._stiffness_factory is not None, 'Set stiffness factory first'
+        assert self._mass_factory is not None, 'Set mass factory first'
 
         _type = self._context['analysis_type']
-
-        stiffness_stencils = self._create_stiffness_stencils(mesh)
 
         if self._analysis_strategy == fdm.analysis.AnalysisStrategy.UP_TO_DOWN:
             creator = self._create_template_for_up_to_down
@@ -248,14 +258,13 @@ class Builder1d:
             raise NotImplementedError
 
         if _type == fdm.AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS:
-            load_vector = LoadVectorValueFactory(self._length, self._span, self.density_controller, self._context)
-            rhs = load_vector
+            rhs = LoadVectorValueFactory(self._length, self._span, self.density_controller, self._context)
         elif _type == fdm.AnalysisType.EIGENPROBLEM:
-            mass_stencils = MassSchemeFactory(self._length, self._span, self.density_controller, self._context)
-            rhs = mass_stencils
+            rhs = self._create_mass_stencil()
         else:
             raise AttributeError
 
+        stiffness_stencils = self._create_stiffness_stencils(mesh)
         return creator(mesh, stiffness_stencils, rhs)
 
     def _create_template_for_up_to_down(self, mesh, stiffness_stencils, rhs):
@@ -265,12 +274,16 @@ class Builder1d:
         return fdm.equation.Template(get_expander)
 
     def _create_template_for_down_to_up(self, mesh, stiffness_stencils, rhs):
-        def rhs_caller(function):
-            def call(p):
-                return function(p)(p)
-            return call
+        _type = self._context['analysis_type']
+        if _type == fdm.AnalysisType.SYSTEM_OF_LINEAR_EQUATIONS:
+            def rhs_calc(p):
+                return rhs(p)(p)
+        elif _type == fdm.AnalysisType.EIGENPROBLEM:
+            rhs_calc = fdm.DynamicElement(rhs)
+        else:
+            raise AttributeError
 
-        return [(mesh.real_nodes, (stiffness_stencils, rhs_caller(rhs)))]
+        return [(mesh.real_nodes, (stiffness_stencils, rhs_calc))]
 
     def _create_stiffness_stencils(self, mesh):
         data = StiffnessInput(
@@ -287,6 +300,12 @@ class Builder1d:
         scale = correction(max(self.density_controller.get(point), MIN_DENSITY)) if correction else 1.
         return self.young_modulus_controller(point) * scale
 
+    def _create_mass_stencil(self):
+        data = MassInput(
+            density_controller=self.density_controller
+        )
+        return self._mass_factory(data)
+
     def _create_complex_bcs(self, mesh):
         data = BCsInput(
             mesh, self._length, self._span,
@@ -295,7 +314,8 @@ class Builder1d:
         )
 
         return self._complex_boundary_factory(
-            self._context['analysis_type'], self._context['boundary'], data)
+            self._context['analysis_type'], self._context['boundary'], data
+        )
 
     @property
     def _last_node_index(self):
@@ -423,6 +443,18 @@ def limit_element(element, points):
     return fdm.DynamicElement(get)
 
 
+def create_truss1d_mass_operator(data):
+    return MassSchemeFactory(
+        data.density_controller,
+    )
+
+
+def create_beam1d_mass_operator(data):
+    return MassSchemeFactory(
+        data.density_controller, multiplier=-1.
+    )
+
+
 def null_complex_boundary_factory(*args, **kwargs):
     return ()
 
@@ -478,8 +510,64 @@ def create_beam_statics_bcs(boundary, data):
     return bcs
 
 
-def create_beam_eigenproblem_bc(boundary, data):  # todo:
-    return []
+def create_beam_eigenproblem_bc(boundary, data):
+    span = data.span
+    mesh = data.mesh
+
+    begin_node, end_node = mesh.real_nodes[0], mesh.real_nodes[-1]
+    begin_displacement_fixed = dynamic_boundary(fdm.Scheme({begin_node: 1.}), fdm.Scheme({}))
+    end_displacement_fixed = dynamic_boundary(fdm.Scheme({end_node: 1.}), fdm.Scheme({}))
+
+    derivative = fdm.Operator(fdm.Stencil.central(span))
+    second_derivative = fdm.Operator(fdm.Stencil.central(span), derivative)
+
+    begin_rotation_fixed = dynamic_boundary(derivative.expand(begin_node), fdm.Scheme({}))
+    end_rotation_fixed = dynamic_boundary(derivative.expand(end_node), fdm.Scheme({}))
+
+    begin_moment_zero = dynamic_boundary(second_derivative.expand(begin_node), fdm.Scheme({}))
+    end_moment_zero = dynamic_boundary(second_derivative.expand(end_node), fdm.Scheme({}))
+
+    bcs = []
+    if boundary[Side.LEFT].type == BoundaryType.FIXED:
+        bcs += [
+            begin_displacement_fixed,
+            begin_rotation_fixed,
+        ]
+    elif boundary[Side.LEFT].type == BoundaryType.HINGE:
+        bcs += [
+            begin_displacement_fixed,
+            begin_moment_zero,
+        ]
+
+    if boundary[Side.RIGHT].type == BoundaryType.FIXED:
+        bcs += [
+            end_displacement_fixed,
+            end_rotation_fixed,
+        ]
+    elif boundary[Side.RIGHT].type == BoundaryType.HINGE:
+        bcs += [
+            end_displacement_fixed,
+            end_moment_zero,
+        ]
+
+    def p(s, base=0.):
+        return Point(base + span * s)
+
+    left_vbc_stencil = fdm.Stencil({p(-2): -1., p(-1): 4., p(0): -5., p(2): 5., p(3): -4., p(4): 1.})
+    right_vbc_stencil = fdm.Stencil({p(2): -1., p(1): 4., p(0): -5., p(-2): 5., p(-3): -4., p(-4): 1.})
+
+    virtual_nodes = mesh.virtual_nodes
+    vn = len(virtual_nodes)
+    hvn = int(vn / 2.)
+    left_virtual_nodes = virtual_nodes[:hvn]
+    right_virtual_nodes = virtual_nodes[hvn:]
+
+    bcs += [dynamic_boundary(left_vbc_stencil.expand(node), fdm.Scheme({}))
+            for node in left_virtual_nodes[:-2]]
+    bcs += [dynamic_boundary(right_vbc_stencil.expand(node), fdm.Scheme({}))
+            for node in right_virtual_nodes[:-2]]
+
+    return bcs
 
 
 def create_complex_truss_bcs():
@@ -514,8 +602,8 @@ def create_truss_eigenproblem_bc(boundary, data):
     mesh = data.mesh
 
     begin_node, end_node = mesh.real_nodes[0], mesh.real_nodes[-1]
-    begin_displacement_fixed = dynamic_boundary(fdm.Scheme({begin_node: 1.}), fdm.Scheme({}), replace=begin_node)
-    end_displacement_fixed = dynamic_boundary(fdm.Scheme({end_node: 1.}), fdm.Scheme({}), replace=end_node)
+    begin_displacement_fixed = dynamic_boundary(fdm.Scheme({begin_node: 1.}), fdm.Scheme({}))
+    end_displacement_fixed = dynamic_boundary(fdm.Scheme({end_node: 1.}), fdm.Scheme({}))
 
     bcs = []
     if boundary[Side.LEFT].type == BoundaryType.FIXED:
@@ -884,12 +972,13 @@ class LoadVectorValueFactory:
 
 
 class MassSchemeFactory:
-    def __init__(self, length, span, density_controller, context):
+    def __init__(self, density_controller, multiplier=1.):
         self._density_controller = density_controller
+        self._multiplier = multiplier
 
     def __call__(self, point):
         return fdm.Stencil(
-            {Point(0.): self._density_controller.get(point)}
+            {Point(0.): self._multiplier * self._density_controller.get(point)}
         )
 
 
